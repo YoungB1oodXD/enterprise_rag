@@ -1,0 +1,68 @@
+app:
+  host: "0.0.0.0"
+  port: 6006
+  debug: false
+
+elasticsearch:
+  host: "localhost"
+  port: 1200
+  scheme: "http"
+  username: "elastic"
+  password: "your-es-password"
+  index_document_meta: "rag_enterprise_document_meta"
+  index_chunk_info: "rag_enterprise_chunk_info"
+
+database:
+  engine: "mysql+pymysql"
+  host: "localhost"
+  port: 3308
+  username: "root"
+  password: "your-db-password"
+  db_name: "rag_enterprise"
+  # sqlite 配置保留参考
+  # engine: "sqlite"
+  # path: "rag.db"
+
+models:
+  embedding:
+    text-embedding-v3:
+      # DashScope text-embedding-v3，通过 API 调用，无需本地模型路径
+      dims: 1536
+
+rag:
+  # Embedding 模型名称，对应 models.embedding 下的 key
+  embedding_model: "text-embedding-v3"
+
+  # rerank 暂未启用（需要本地模型）
+  use_rerank: false
+  rerank_model: ""
+
+  # 分块参数
+  chunk_size: 256
+  chunk_overlap: 32
+
+  # 检索参数
+  bm25_top_k: 50
+  vector_top_k: 50
+  rrf_k: 60
+  rerank_top_k: 5
+
+  # Rerank 置信度阈值；分数低于该值的 chunk 不进入最终上下文
+  confidence_threshold: 0.0
+
+  # LLM 配置
+  # API Key 不要写在 config.yaml 中，请通过环境变量配置：
+  # DASHSCOPE_API_KEY=your_api_key
+  # 或 LLM_API_KEY=your_api_key
+  llm_base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  llm_model: "qwen-plus"
+  llm_temperature: 0.1
+  llm_top_p: 1.0
+  llm_max_tokens: 1024
+
+# auto / cpu / cuda / mps
+device: "auto"
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"
