@@ -33,9 +33,9 @@ rag:
   # Embedding 模型名称，对应 models.embedding 下的 key
   embedding_model: "text-embedding-v3"
 
-  # rerank 暂未启用（需要本地模型）
+  # rerank 通过 DashScope gte-rerank API 实现
   use_rerank: false
-  rerank_model: ""
+  rerank_model: "gte-rerank"
 
   # 分块参数
   chunk_size: 256

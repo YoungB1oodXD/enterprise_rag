@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { useToast } from '../store/toast';
 import type { KnowledgeBase, KnowledgeBaseCreateRequest } from '../types';
 import { PlusIcon, TrashIcon, FolderOpenIcon } from '@heroicons/react/24/outline';
 
 export default function KnowledgeBases() {
+  const { showToast } = useToast();
   const [kbList, setKbList] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -19,8 +21,8 @@ export default function KnowledgeBases() {
       if (Array.isArray(res.data)) {
         setKbList(res.data);
       }
-    } catch {
-      // try alternate: maybe it doesn't have a list endpoint
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || '获取知识库列表失败');
     } finally {
       setLoading(false);
     }

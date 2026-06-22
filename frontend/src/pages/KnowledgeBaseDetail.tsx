@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useChat } from '../hooks/useChat';
+import { useToast } from '../store/toast';
 import type { Document } from '../types';
 import {
   ArrowLeftIcon,
@@ -62,6 +63,7 @@ export default function KnowledgeBaseDetail() {
 }
 
 function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onTitleChange: (t: string) => void }) {
+  const { showToast } = useToast();
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -74,8 +76,8 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
       if (Array.isArray(res.data)) {
         setDocs(res.data);
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || '获取文档列表失败');
     } finally {
       setLoading(false);
     }
@@ -214,7 +216,7 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
 }
 
 function ChatTab({ knowledgeId }: { knowledgeId: number }) {
-  const { messages, streamingContent, sources, loading, sendMessage, stopStreaming } = useChat({ knowledgeId });
+  const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming } = useChat({ knowledgeId });
   const [input, setInput] = useState('');
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -245,9 +247,17 @@ function ChatTab({ knowledgeId }: { knowledgeId: number }) {
     <div className="h-full flex flex-col">
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-3xl mx-auto space-y-4">
-          {messages.length === 0 && !streamingContent && (
+          {messages.length === 0 && !streamingContent && !error && (
             <div className="text-center py-16 text-gray-400">
               <p className="text-sm">向知识库提问，获取基于文档的智能回答</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex justify-center">
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%]">
+                {error}
+              </div>
             </div>
           )}
 
@@ -284,7 +294,7 @@ function ChatTab({ knowledgeId }: { knowledgeId: number }) {
                     className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs"
                   >
                     {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
-                    [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.document_name}
+                    [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
                   </button>
                   {expandedSources[i] && (
                     <p className="mt-1 text-xs text-gray-500 bg-white rounded-lg p-2 border border-gray-100 whitespace-pre-wrap">

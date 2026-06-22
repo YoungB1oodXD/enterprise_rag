@@ -93,6 +93,11 @@ def hybrid_search(query: str, knowledge_id: int) -> List[Dict[str, Any]]:
     # 调用 model_manager 进行打分
     scores = get_rerank_scores(pairs)
 
+    # 如果 Reranker 返回空（API 失败/未配置），降级使用 RRF 排序
+    if len(scores) == 0:
+        logger.warning("Reranker 返回空分数，降级使用 RRF 排序")
+        return fused_docs[:settings.rag.rerank_top_k]
+
     # 将分数更新回文档，并按精排分数重新排序
     for i, doc in enumerate(fused_docs):
         doc["rerank_score"] = float(scores[i])

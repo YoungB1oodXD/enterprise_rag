@@ -66,6 +66,7 @@ logs/
 # 6. AI 模型权重与大文件
 # ==========================================
 models/
+!app/models/
 checkpoints/
 *.bin
 *.pt

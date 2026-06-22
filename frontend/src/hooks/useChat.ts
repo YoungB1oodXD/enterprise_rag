@@ -10,6 +10,7 @@ export function useChat({ knowledgeId }: UseChatOptions) {
   const [streamingContent, setStreamingContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<RAGSource[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(async (content: string) => {
@@ -19,6 +20,7 @@ export function useChat({ knowledgeId }: UseChatOptions) {
     setMessages((prev) => [...prev, userMessage]);
     setStreamingContent('');
     setSources([]);
+    setError(null);
     setLoading(true);
 
     const history = [...messages, userMessage];
@@ -68,7 +70,7 @@ export function useChat({ knowledgeId }: UseChatOptions) {
               setSources(parsed.sources);
             }
             if (parsed.error) {
-              console.error('SSE error:', parsed.error);
+              setError(parsed.error);
             }
           } catch {
             // skip unparseable chunks
@@ -80,7 +82,7 @@ export function useChat({ knowledgeId }: UseChatOptions) {
       setStreamingContent('');
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        console.error('Chat error:', err);
+        setError(err.message || '请求失败，请稍后重试');
       }
     } finally {
       setLoading(false);
@@ -92,5 +94,5 @@ export function useChat({ knowledgeId }: UseChatOptions) {
     abortRef.current?.abort();
   }, []);
 
-  return { messages, streamingContent, sources, loading, sendMessage, stopStreaming };
+  return { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming };
 }
