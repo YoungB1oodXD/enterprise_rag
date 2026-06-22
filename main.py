@@ -38,7 +38,20 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    # 纯文本
+    "text/plain",
+    "text/markdown",
+    # CSV
+    "text/csv",
+    "application/csv",
+    # Excel
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    # JSON / JSONL
+    "application/json",
+    "application/x-ndjson",
+    "application/jsonl",
 }
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
 

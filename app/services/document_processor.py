@@ -4,7 +4,7 @@ from elasticsearch.helpers import bulk
 
 from app.db.session import get_session
 from app.db.models import Document
-from app.utils.parser import extract_text, chunk_text_by_headers
+from app.utils.parser import extract_text, chunk_text
 from app.core.es_client import es
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -68,7 +68,7 @@ def process_document_background(document_id: int):
             raise ValueError("提取的文本为空，可能是空白文档或扫描件 OCR 失败")
         # Step2：智能分块
         logger.info("Step2/4 智能分块...")
-        chunks = chunk_text_by_headers(full_text)
+        chunks = chunk_text(file_path, full_text)
 
         if not chunks:
             raise ValueError("分块结果为空，请检查文档格式")
