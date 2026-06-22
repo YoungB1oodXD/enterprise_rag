@@ -12,12 +12,15 @@ from app.core.config import settings
 from app.core.logger import get_logger
 from app.core.auth import get_current_user
 from app.db.session import get_session
-from app.db.models import KnowledgeBase, Document, User
+from app.db.models import KnowledgeBase, Document, Conversation, ConversationMessage, User
 from app.api.schemas import (
     KnowledgeBaseCreateRequest, KnowledgeBaseResponse,
-    DocumentResponse, RAGRequest, RAGResponse, ChatMessage,
+    DocumentResponse, RAGRequest, RAGStreamRequest, RAGResponse, ChatMessage,
     LoginRequest, LoginResponse,
+    ConversationResponse, ConversationMessageResponse, ConversationDetailResponse,
+    CreateConversationRequest, UpdateConversationRequest,
 )
+from app.api.schemas import RAGSource as RAGSourceSchema
 from app.services.document_processor import process_document_background
 from app.services.qa_service import chat_with_knowledge_base, stream_chat_with_knowledge_base
 
@@ -400,7 +403,158 @@ def delete_document(document_id: int, current_user: User = Depends(get_current_u
 
 
 # ==========================================
-# 6. RAG 问答接口
+# 6. 对话/会话管理接口
+# ==========================================
+
+@app.get("/v1/conversation/list", response_model=List[ConversationResponse], summary="获取知识库下的会话列表")
+def list_conversations(knowledge_id: int, current_user: User = Depends(get_current_user)):
+    """返回指定知识库下的所有会话，按更新时间倒序。"""
+    start_time = time.time()
+    with get_session() as session:
+        convs = session.query(Conversation).filter(
+            Conversation.knowledge_id == knowledge_id,
+            Conversation.user_id == current_user.id,
+        ).order_by(Conversation.update_dt.desc()).all()
+
+        results = []
+        for conv in convs:
+            msg_count = len(conv.messages)
+            results.append(ConversationResponse(
+                response_code=200,
+                response_msg="ok",
+                processing_time=0.0,
+                conversation_id=conv.conversation_id,
+                knowledge_id=conv.knowledge_id,
+                title=conv.title,
+                message_count=msg_count,
+                create_dt=conv.create_dt.isoformat(),
+                update_dt=conv.update_dt.isoformat(),
+            ))
+        return results
+
+
+@app.post("/v1/conversation", response_model=ConversationResponse, summary="创建新会话")
+def create_conversation(req: CreateConversationRequest, current_user: User = Depends(get_current_user)):
+    start_time = time.time()
+    with get_session() as session:
+        conv = Conversation(
+            knowledge_id=req.knowledge_id,
+            user_id=current_user.id,
+            title=req.title or "新对话",
+        )
+        session.add(conv)
+        session.flush()
+        return ConversationResponse(
+            response_code=200,
+            response_msg="会话创建成功",
+            processing_time=time.time() - start_time,
+            conversation_id=conv.conversation_id,
+            knowledge_id=conv.knowledge_id,
+            title=conv.title,
+            message_count=0,
+            create_dt=conv.create_dt.isoformat(),
+            update_dt=conv.update_dt.isoformat(),
+        )
+
+
+@app.put("/v1/conversation/{conversation_id}", response_model=ConversationResponse, summary="更新会话标题")
+def update_conversation(conversation_id: int, req: UpdateConversationRequest,
+                        current_user: User = Depends(get_current_user)):
+    start_time = time.time()
+    with get_session() as session:
+        conv = session.query(Conversation).filter(
+            Conversation.conversation_id == conversation_id,
+            Conversation.user_id == current_user.id,
+        ).first()
+        if not conv:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        conv.title = req.title
+        session.flush()
+        return ConversationResponse(
+            response_code=200,
+            response_msg="会话已更新",
+            processing_time=time.time() - start_time,
+            conversation_id=conv.conversation_id,
+            knowledge_id=conv.knowledge_id,
+            title=conv.title,
+            message_count=len(conv.messages),
+            create_dt=conv.create_dt.isoformat(),
+            update_dt=conv.update_dt.isoformat(),
+        )
+
+
+@app.delete("/v1/conversation/{conversation_id}", response_model=ConversationResponse, summary="删除会话")
+def delete_conversation(conversation_id: int, current_user: User = Depends(get_current_user)):
+    start_time = time.time()
+    with get_session() as session:
+        conv = session.query(Conversation).filter(
+            Conversation.conversation_id == conversation_id,
+            Conversation.user_id == current_user.id,
+        ).first()
+        if not conv:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        title = conv.title
+        kt_id = conv.knowledge_id
+        session.delete(conv)
+        return ConversationResponse(
+            response_code=200,
+            response_msg="会话删除成功",
+            processing_time=time.time() - start_time,
+            conversation_id=conversation_id,
+            knowledge_id=kt_id,
+            title=title,
+            message_count=0,
+            create_dt="",
+            update_dt="",
+        )
+
+
+@app.get("/v1/conversation/{conversation_id}", response_model=ConversationDetailResponse,
+         summary="获取会话详情（含所有消息）")
+def get_conversation(conversation_id: int, current_user: User = Depends(get_current_user)):
+    start_time = time.time()
+    with get_session() as session:
+        conv = session.query(Conversation).filter(
+            Conversation.conversation_id == conversation_id,
+            Conversation.user_id == current_user.id,
+        ).first()
+        if not conv:
+            raise HTTPException(status_code=404, detail="会话不存在")
+
+        messages = []
+        for msg in conv.messages:
+            sources = None
+            if msg.sources:
+                try:
+                    import json
+                    sources_data = json.loads(msg.sources)
+                    sources = [RAGSourceSchema(**item) for item in sources_data]
+                except Exception:
+                    pass
+            messages.append(ConversationMessageResponse(
+                response_code=200,
+                response_msg="ok",
+                processing_time=0.0,
+                message_id=msg.message_id,
+                role=msg.role,
+                content=msg.content,
+                sources=sources,
+                create_dt=msg.create_dt.isoformat(),
+            ))
+
+        return ConversationDetailResponse(
+            response_code=200,
+            response_msg="ok",
+            processing_time=time.time() - start_time,
+            conversation_id=conv.conversation_id,
+            knowledge_id=conv.knowledge_id,
+            title=conv.title,
+            messages=messages,
+        )
+
+
+# ==========================================
+# 7. RAG 问答接口（非流式）
 # ==========================================
 @app.post("/chat", response_model=RAGResponse, summary="智能知识库问答")
 def chat(req: RAGRequest, current_user: User = Depends(get_current_user)):
@@ -427,10 +581,69 @@ def chat(req: RAGRequest, current_user: User = Depends(get_current_user)):
 
 
 # ==========================================
-# 7. 流式问答接口
+# 8. 流式问答接口（带对话持久化）
 # ==========================================
-@app.post("/chat/stream", summary="智能知识库问答（流式打字机效果）")
-def chat_stream(req: RAGRequest, current_user: User = Depends(get_current_user)):
+
+def _persist_streaming_response(generator, conversation_id: int, user_query: str):
+    """
+    包装流式生成器，在 SSE 流结束后自动保存 assistant 回答到数据库。
+
+    设计说明：
+    - 生成器运行在请求 handler 返回之后，不能复用请求内的 session。
+    - 每次调用 _persist_streaming_response 都会开启新的独立 session，
+      确保不会出现 session 冲突。
+    - 用 `with get_session()` 的上下文管理器保证自动 commit/rollback。
+    """
+    full_content = ""
+    sources_json = None
+    collected_sources = None
+
+    for event in generator:
+        # 透传所有事件，同时收集 chunk 和 sources
+        if event.startswith("data: ") and not event.startswith("data: [DONE]"):
+            try:
+                import json
+                payload = json.loads(event[6:].strip())
+                if "chunk" in payload:
+                    full_content += payload["chunk"]
+                if "sources" in payload:
+                    collected_sources = payload["sources"]
+                    sources_json = json.dumps(payload["sources"], ensure_ascii=False)
+            except Exception:
+                pass
+
+        yield event
+
+        # 遇到结束标记后，保存 assistant 回答
+        if event == "data: [DONE]\n\n" and full_content.strip():
+            try:
+                from app.db.session import get_session
+                with get_session() as session:
+                    msg = ConversationMessage(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=full_content,
+                        sources=sources_json,
+                    )
+                    session.add(msg)
+
+                    # 自动标题：如果是第一条消息（只有 1 条 user + 1 条 assistant）
+                    msg_count = session.query(ConversationMessage).filter(
+                        ConversationMessage.conversation_id == conversation_id
+                    ).count()
+                    if msg_count <= 2:  # user + assistant
+                        conv = session.query(Conversation).filter(
+                            Conversation.conversation_id == conversation_id
+                        ).first()
+                        if conv and conv.title == "新对话":
+                            conv.title = (user_query[:30] + "...") if len(user_query) > 30 else user_query
+            except Exception as e:
+                from app.core.logger import get_logger
+                get_logger(__name__).error(f"持久化会话消息失败: {e}")
+
+
+@app.post("/chat/stream", summary="智能知识库问答（流式打字机效果，支持对话持久化）")
+def chat_stream(req: RAGStreamRequest, current_user: User = Depends(get_current_user)):
     if not req.messages:
         raise HTTPException(status_code=400, detail="对话历史不能为空")
 
@@ -438,7 +651,28 @@ def chat_stream(req: RAGRequest, current_user: User = Depends(get_current_user))
     if not user_query.strip():
         raise HTTPException(status_code=400, detail="问题内容不能为空")
 
+    # 如果传入了 conversation_id，验证所有权并保存用户消息
+    if req.conversation_id:
+        with get_session() as session:
+            conv = session.query(Conversation).filter(
+                Conversation.conversation_id == req.conversation_id,
+                Conversation.user_id == current_user.id,
+            ).first()
+            if not conv:
+                raise HTTPException(status_code=404, detail="会话不存在")
+            # 保存用户消息
+            user_msg = ConversationMessage(
+                conversation_id=req.conversation_id,
+                role="user",
+                content=user_query,
+            )
+            session.add(user_msg)
+
     generator = stream_chat_with_knowledge_base(req.knowledge_id, user_query, req.messages)
+
+    if req.conversation_id:
+        generator = _persist_streaming_response(generator, req.conversation_id, user_query)
+
     return StreamingResponse(generator, media_type="text/event-stream")
 
 

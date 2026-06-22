@@ -3,9 +3,10 @@ import type { ChatMessage, RAGSource } from '../types';
 
 interface UseChatOptions {
   knowledgeId: number;
+  conversationId?: number | null;
 }
 
-export function useChat({ knowledgeId }: UseChatOptions) {
+export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,7 +14,18 @@ export function useChat({ knowledgeId }: UseChatOptions) {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const sendMessage = useCallback(async (content: string) => {
+  // 用 ref 镜像 messages，避免闭包捕获过期值
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
+
+  const loadConversation = useCallback((msgs: ChatMessage[]) => {
+    setMessages(msgs);
+    setStreamingContent('');
+    setSources([]);
+    setError(null);
+  }, []);
+
+  const sendMessage = useCallback(async (content: string, convId?: number | null) => {
     if (!content.trim() || loading) return;
 
     const userMessage: ChatMessage = { role: 'user', content };
@@ -23,19 +35,26 @@ export function useChat({ knowledgeId }: UseChatOptions) {
     setError(null);
     setLoading(true);
 
-    const history = [...messages, userMessage];
+    const history = [...messagesRef.current, userMessage];
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const activeConvId = convId !== undefined ? convId : conversationId;
+
     try {
       const token = localStorage.getItem('token');
+      const body: Record<string, unknown> = { knowledge_id: knowledgeId, messages: history };
+      if (activeConvId) {
+        body.conversation_id = activeConvId;
+      }
+
       const res = await fetch('/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ knowledge_id: knowledgeId, messages: history }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -88,11 +107,11 @@ export function useChat({ knowledgeId }: UseChatOptions) {
       setLoading(false);
       abortRef.current = null;
     }
-  }, [knowledgeId, messages, loading]);
+  }, [knowledgeId, conversationId, loading]);
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  return { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming };
+  return { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation };
 }

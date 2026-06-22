@@ -13,7 +13,7 @@ process_status 字段是关键设计：
 这样前端可以轮询文档状态，用户知道文档是否可用
 """
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text as sa_text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -67,3 +67,38 @@ class Document(Base):
 
     def __repr__(self):
         return f"<Document id={self.document_id} title={self.title} status={self.process_status}>"
+
+
+class Conversation(Base):
+    """对话会话表：一次问答会话包含多条消息"""
+    __tablename__ = "conversation"
+
+    conversation_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False, comment="所属用户")
+    knowledge_id = Column(Integer, ForeignKey("knowledge_base.knowledge_id"), nullable=False, comment="关联知识库")
+    title = Column(String(255), default="新对话", comment="会话标题，自动根据首条问题生成")
+    create_dt = Column(DateTime, default=datetime.datetime.now)
+    update_dt = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+    messages = relationship("ConversationMessage", back_populates="conversation", cascade="all, delete-orphan",
+                            order_by="ConversationMessage.create_dt.asc()")
+
+    def __repr__(self):
+        return f"<Conversation id={self.conversation_id} title={self.title}>"
+
+
+class ConversationMessage(Base):
+    """会话消息表：一条对话中的单条消息"""
+    __tablename__ = "conversation_message"
+
+    message_id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey("conversation.conversation_id"), nullable=False)
+    role = Column(String(20), nullable=False, comment="user / assistant")
+    content = Column(sa_text, nullable=False, comment="消息内容")
+    sources = Column(sa_text, nullable=True, comment="assistant 消息的溯源信息（JSON 序列化的 RAGSource[]）")
+    create_dt = Column(DateTime, default=datetime.datetime.now)
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+    def __repr__(self):
+        return f"<ConversationMessage id={self.message_id} role={self.role}>"

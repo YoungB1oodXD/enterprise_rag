@@ -35,3 +35,27 @@ export interface KnowledgeBaseCreateRequest {
   title: string
   category: string
 }
+
+export interface Conversation {
+  conversation_id: number
+  knowledge_id: number
+  title: string
+  message_count: number
+  create_dt: string
+  update_dt: string
+}
+
+export interface ConversationMessage {
+  message_id: number
+  role: 'user' | 'assistant'
+  content: string
+  sources?: RAGSource[]
+  create_dt: string
+}
+
+export interface ConversationDetail {
+  conversation_id: number
+  knowledge_id: number
+  title: string
+  messages: ConversationMessage[]
+}

@@ -1,26 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
-import { useChat } from '../hooks/useChat';
 import { useToast } from '../store/toast';
 import type { Document } from '../types';
 import {
   ArrowLeftIcon,
   DocumentTextIcon,
   TrashIcon,
-  PaperAirplaneIcon,
-  StopIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
 } from '@heroicons/react/24/outline';
-
-type Tab = 'documents' | 'chat';
 
 export default function KnowledgeBaseDetail() {
   const { id } = useParams<{ id: string }>();
   const knowledgeId = Number(id);
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>('documents');
   const [kbTitle, setKbTitle] = useState('');
 
   return (
@@ -32,31 +24,8 @@ export default function KnowledgeBaseDetail() {
         <h1 className="text-base font-semibold text-gray-900">{kbTitle || '知识库'}</h1>
       </header>
 
-      <div className="flex gap-0 border-b border-gray-200 px-6 bg-white shrink-0">
-        <button
-          onClick={() => setTab('documents')}
-          className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${
-            tab === 'documents' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          文档管理
-        </button>
-        <button
-          onClick={() => setTab('chat')}
-          className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${
-            tab === 'chat' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          智能问答
-        </button>
-      </div>
-
       <div className="flex-1 overflow-auto">
-        {tab === 'documents' ? (
-          <DocumentsTab knowledgeId={knowledgeId} onTitleChange={setKbTitle} />
-        ) : (
-          <ChatTab knowledgeId={knowledgeId} />
-        )}
+        <DocumentsTab knowledgeId={knowledgeId} onTitleChange={setKbTitle} />
       </div>
     </div>
   );
@@ -215,130 +184,3 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
   );
 }
 
-function ChatTab({ knowledgeId }: { knowledgeId: number }) {
-  const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming } = useChat({ knowledgeId });
-  const [input, setInput] = useState('');
-  const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
-
-  const handleSend = () => {
-    if (!input.trim() || loading) return;
-    sendMessage(input.trim());
-    setInput('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const toggleSource = (idx: number) => {
-    setExpandedSources((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-3xl mx-auto space-y-4">
-          {messages.length === 0 && !streamingContent && !error && (
-            <div className="text-center py-16 text-gray-400">
-              <p className="text-sm">向知识库提问，获取基于文档的智能回答</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex justify-center">
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%]">
-                {error}
-              </div>
-            </div>
-          )}
-
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[75%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white border border-gray-200 text-gray-800'
-                }`}
-              >
-                {msg.content}
-              </div>
-            </div>
-          ))}
-
-          {streamingContent && (
-            <div className="flex justify-start">
-              <div className="max-w-[75%] rounded-xl px-4 py-3 bg-white border border-gray-200 text-sm leading-relaxed text-gray-800">
-                {streamingContent}
-                <span className="inline-block w-2 h-4 bg-indigo-600 ml-0.5 animate-pulse" />
-              </div>
-            </div>
-          )}
-
-          {sources.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4 text-sm">
-              <p className="text-xs font-medium text-gray-500 mb-2">参考来源</p>
-              {sources.map((src, i) => (
-                <div key={i} className="mb-1 last:mb-0">
-                  <button
-                    onClick={() => toggleSource(i)}
-                    className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs"
-                  >
-                    {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
-                    [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
-                  </button>
-                  {expandedSources[i] && (
-                    <p className="mt-1 text-xs text-gray-500 bg-white rounded-lg p-2 border border-gray-100 whitespace-pre-wrap">
-                      {src.chunk_content}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-
-      <div className="border-t border-gray-200 bg-white p-4 shrink-0">
-        <div className="max-w-3xl mx-auto flex gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入你的问题..."
-            rows={1}
-            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-          {loading ? (
-            <button
-              onClick={stopStreaming}
-              className="px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600"
-            >
-              <StopIcon className="w-5 h-5" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-            >
-              <PaperAirplaneIcon className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}

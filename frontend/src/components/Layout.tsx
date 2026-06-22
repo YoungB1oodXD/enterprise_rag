@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/auth';
-import { CubeIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
+import { CubeIcon, ChatBubbleLeftRightIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { username, logout } = useAuth();
@@ -22,10 +22,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <NavLink
             to="/knowledge-bases"
             className={({ isActive }) =>
-              `block px-3 py-2 rounded-lg text-sm font-medium ${isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`
+              `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`
             }
           >
-            知识库
+            <CubeIcon className="w-5 h-5" />
+            知识库管理
+          </NavLink>
+          <NavLink
+            to="/chat"
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`
+            }
+          >
+            <ChatBubbleLeftRightIcon className="w-5 h-5" />
+            智能问答
           </NavLink>
         </nav>
         <div className="p-3 border-t border-gray-200">

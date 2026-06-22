@@ -135,3 +135,45 @@ class RAGResponse(BaseResponse):
     answer: str = Field(description="LLM 生成的回答")
     sources: List[RAGSource] = Field(description="答案来源列表，支持溯源核验")
     messages: List[ChatMessage] = Field(description="包含本轮回答的完整对话历史")
+
+
+# ==========================================
+# 对话 / 会话
+# ==========================================
+
+class RAGStreamRequest(RAGRequest):
+    """流式问答请求，在 RAGRequest 基础上增加可选的会话 ID"""
+    conversation_id: Optional[int] = Field(default=None, description="会话ID，传入后会持久化对话记录")
+
+
+class CreateConversationRequest(BaseModel):
+    knowledge_id: int = Field(description="关联的知识库ID")
+    title: str = Field(default="新对话", description="会话标题")
+
+
+class UpdateConversationRequest(BaseModel):
+    title: str = Field(description="新标题")
+
+
+class ConversationResponse(BaseResponse):
+    conversation_id: int
+    knowledge_id: int
+    title: str
+    message_count: int = Field(default=0, description="消息数量")
+    create_dt: str = Field(description="创建时间（ISO格式）")
+    update_dt: str = Field(description="更新时间（ISO格式）")
+
+
+class ConversationMessageResponse(BaseResponse):
+    message_id: int
+    role: str
+    content: str
+    sources: Optional[List[RAGSource]] = None
+    create_dt: str = Field(description="创建时间（ISO格式）")
+
+
+class ConversationDetailResponse(BaseResponse):
+    conversation_id: int
+    knowledge_id: int
+    title: str
+    messages: List[ConversationMessageResponse] = Field(default_factory=list)
