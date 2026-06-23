@@ -340,19 +340,17 @@ def get_document_file(document_id: int, current_user: User = Depends(get_current
 def list_documents(knowledge_id: int, current_user: User = Depends(get_current_user)):
     """返回指定知识库下的所有文档列表。"""
     with get_session() as session:
-        # 先验证知识库存在
         kb = session.query(KnowledgeBase).filter(
-            KnowledgeBase.knowledge_id == knowledge_id
+            KnowledgeBase.knowledge_id == knowledge_id,
+            KnowledgeBase.user_id == current_user.id,
         ).first()
         if not kb:
             raise HTTPException(status_code=404, detail="知识库不存在")
 
-        # 查所有文档，按创建时间倒序（最新上传的在最前面）
         docs = session.query(Document).filter(
             Document.knowledge_id == knowledge_id
         ).order_by(Document.create_dt.desc()).all()
 
-        # 组装返回列表
         return [
             DocumentResponse(
                 response_code=200,
