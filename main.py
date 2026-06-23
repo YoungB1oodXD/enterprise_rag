@@ -280,8 +280,11 @@ def upload_document(
 def get_document_status(document_id: int, current_user: User = Depends(get_current_user)):
     start_time = time.time()
     with get_session() as session:
-        doc = session.query(Document).filter(
-            Document.document_id == document_id
+        doc = session.query(Document).join(
+            KnowledgeBase, Document.knowledge_id == KnowledgeBase.knowledge_id
+        ).filter(
+            Document.document_id == document_id,
+            KnowledgeBase.user_id == current_user.id,
         ).first()
         if not doc:
             raise HTTPException(status_code=404, detail="文档不存在")
