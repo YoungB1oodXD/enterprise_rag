@@ -123,13 +123,16 @@ export default function Chat() {
     try {
       const res = await api.post('/v1/conversation', { knowledge_id: selectedKbId });
       const conv: Conversation = res.data;
-      setConversations((prev) => [conv, ...prev]);
       setActiveConvId(conv.conversation_id);
       loadConversation([]);
+      // 切回第一页并重新加载列表
+      setConvPage(1);
+      setConvSearch('');
+      fetchConversations(selectedKbId, '', 1);
     } catch {
       showToast('创建会话失败');
     }
-  }, [selectedKbId, loadConversation, showToast]);
+  }, [selectedKbId, loadConversation, fetchConversations, showToast]);
 
   // 5. 删除会话
   const handleDeleteConversation = useCallback(async (convId: number, e: React.MouseEvent) => {
