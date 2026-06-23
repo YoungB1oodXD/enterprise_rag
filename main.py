@@ -464,20 +464,34 @@ def delete_document(document_id: int, current_user: User = Depends(get_current_u
 # 6. 对话/会话管理接口
 # ==========================================
 
-@app.get("/v1/conversation/list", response_model=List[ConversationResponse], summary="获取知识库下的会话列表")
-def list_conversations(knowledge_id: int, current_user: User = Depends(get_current_user)):
-    """返回指定知识库下的所有会话，按更新时间倒序。"""
-    start_time = time.time()
+@app.get("/v1/conversation/list", summary="获取知识库下的会话列表（支持搜索与分页）")
+def list_conversations(
+    knowledge_id: int,
+    search: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(get_current_user),
+):
+    """返回指定知识库下的会话列表，支持按标题搜索和分页。"""
     with get_session() as session:
-        convs = session.query(Conversation).filter(
+        query = session.query(Conversation).filter(
             Conversation.knowledge_id == knowledge_id,
             Conversation.user_id == current_user.id,
-        ).order_by(Conversation.update_dt.desc()).all()
+        )
 
-        results = []
+        if search.strip():
+            query = query.filter(Conversation.title.like(f"%{search.strip()}%"))
+
+        total = query.count()
+
+        convs = query.order_by(Conversation.update_dt.desc()).offset(
+            (page - 1) * page_size
+        ).limit(page_size).all()
+
+        items = []
         for conv in convs:
             msg_count = len(conv.messages)
-            results.append(ConversationResponse(
+            items.append(ConversationResponse(
                 response_code=200,
                 response_msg="ok",
                 processing_time=0.0,
@@ -488,7 +502,8 @@ def list_conversations(knowledge_id: int, current_user: User = Depends(get_curre
                 create_dt=conv.create_dt.isoformat(),
                 update_dt=conv.update_dt.isoformat(),
             ))
-        return results
+
+        return ConversationListResponse(total=total, items=items)
 
 
 @app.post("/v1/conversation", response_model=ConversationResponse, summary="创建新会话")
