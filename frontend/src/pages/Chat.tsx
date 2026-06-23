@@ -324,6 +324,26 @@ export default function Chat() {
                 ))}
               </div>
             )}
+            {/* 分页控件 */}
+            {!convLoading && convTotal > pageSize && (
+              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 text-xs text-gray-500">
+                <button
+                  onClick={() => handlePageChange(convPage - 1)}
+                  disabled={convPage <= 1}
+                  className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                >
+                  上一页
+                </button>
+                <span>第 {convPage} / {Math.ceil(convTotal / pageSize)} 页</span>
+                <button
+                  onClick={() => handlePageChange(convPage + 1)}
+                  disabled={convPage >= Math.ceil(convTotal / pageSize)}
+                  className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                >
+                  下一页
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
