@@ -182,3 +182,8 @@ class ConversationDetailResponse(BaseResponse):
     knowledge_id: int
     title: str
     messages: List[ConversationMessageResponse] = Field(default_factory=list)
+
+
+class ConversationListResponse(BaseModel):
+    total: int = Field(description="总会话数")
+    items: List[ConversationResponse] = Field(default_factory=list)
