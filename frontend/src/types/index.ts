@@ -59,3 +59,8 @@ export interface ConversationDetail {
   title: string
   messages: ConversationMessage[]
 }
+
+export interface ConversationListResponse {
+  total: number
+  items: Conversation[]
+}
