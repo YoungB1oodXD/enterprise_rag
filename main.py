@@ -16,8 +16,8 @@ from app.db.models import KnowledgeBase, Document, Conversation, ConversationMes
 from app.api.schemas import (
     KnowledgeBaseCreateRequest, KnowledgeBaseResponse,
     DocumentResponse, RAGRequest, RAGStreamRequest, RAGResponse, ChatMessage,
-    LoginRequest, LoginResponse,
-    ConversationResponse, ConversationMessageResponse, ConversationDetailResponse,
+    LoginRequest, RegisterRequest, LoginResponse,
+    ConversationResponse, ConversationMessageResponse, ConversationDetailResponse, ConversationListResponse,
     CreateConversationRequest, UpdateConversationRequest,
 )
 from app.api.schemas import RAGSource as RAGSourceSchema
@@ -108,6 +108,30 @@ def login(req: LoginRequest):
         from app.core.auth import verify_password, create_access_token
         if not verify_password(req.password, user.password_hash):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+        token = create_access_token(data={"sub": str(user.id)})
+        return LoginResponse(
+            access_token=token,
+            token_type="bearer",
+            username=user.username,
+        )
+
+
+@app.post("/auth/register", summary="用户注册")
+def register(req: RegisterRequest):
+    start_time = time.time()
+    with get_session() as session:
+        existing = session.query(User).filter(User.username == req.username).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="用户名已存在")
+
+        from app.core.auth import hash_password, create_access_token
+        user = User(
+            username=req.username,
+            password_hash=hash_password(req.password),
+        )
+        session.add(user)
+        session.flush()
 
         token = create_access_token(data={"sub": str(user.id)})
         return LoginResponse(
