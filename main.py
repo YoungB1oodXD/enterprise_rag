@@ -233,7 +233,8 @@ def upload_document(
 
     with get_session() as session:
         kb = session.query(KnowledgeBase).filter(
-            KnowledgeBase.knowledge_id == knowledge_id
+            KnowledgeBase.knowledge_id == knowledge_id,
+            KnowledgeBase.user_id == current_user.id,
         ).first()
         if not kb:
             raise HTTPException(status_code=404, detail="知识库不存在，请先创建知识库")
