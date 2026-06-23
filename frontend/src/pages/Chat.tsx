@@ -257,8 +257,17 @@ export default function Chat() {
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：会话列表 */}
         <aside className="w-64 border-r border-gray-200 bg-white flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b border-gray-100">
+          <div className="px-4 py-3 border-b border-gray-100 space-y-2">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">对话历史</h2>
+            {selectedKbId && (
+              <input
+                type="text"
+                value={convSearch}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="搜索对话..."
+                className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            )}
           </div>
           <div className="flex-1 overflow-auto">
             {convLoading ? (
