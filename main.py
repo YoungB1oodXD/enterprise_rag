@@ -300,6 +300,35 @@ def get_document_status(document_id: int, current_user: User = Depends(get_curre
 
 
 # ==========================================
+# 3.5 文档原始文件预览
+# ==========================================
+@app.get("/v1/document/{document_id}/file", summary="获取文档原始文件")
+def get_document_file(document_id: int, current_user: User = Depends(get_current_user)):
+    """返回文档的原始文件，支持浏览器预览和下载。"""
+    with get_session() as session:
+        doc = session.query(Document).join(
+            KnowledgeBase, Document.knowledge_id == KnowledgeBase.knowledge_id
+        ).filter(
+            Document.document_id == document_id,
+            KnowledgeBase.user_id == current_user.id,
+        ).first()
+        if not doc or not doc.file_path:
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        file_path = doc.file_path
+        content_type = doc.file_type or "application/octet-stream"
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="文件已被删除")
+
+    return FileResponse(
+        path=file_path,
+        media_type=content_type,
+        filename=f"{doc.title}{os.path.splitext(file_path)[1]}",
+    )
+
+
+# ==========================================
 # 4. 文档列表接口
 # ==========================================
 @app.get("/v1/knowledge_base/{knowledge_id}/documents",
