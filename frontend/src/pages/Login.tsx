@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import { CubeIcon } from '@heroicons/react/24/outline';
 
@@ -12,8 +12,7 @@ export default function Login() {
   const navigate = useNavigate();
 
   if (isAuthenticated) {
-    navigate('/knowledge-bases', { replace: true });
-    return null;
+    return <Navigate to="/knowledge-bases" replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

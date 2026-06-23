@@ -3,6 +3,9 @@ import api from '../api/client';
 import { useChat } from '../hooks/useChat';
 import { useToast } from '../store/toast';
 import type { KnowledgeBase, Conversation, ConversationDetail, ChatMessage } from '../types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import {
   ChatBubbleLeftRightIcon,
   PlusIcon,
@@ -22,7 +25,7 @@ export default function Chat() {
   const [convLoading, setConvLoading] = useState(false);
   const [kbLoading, setKbLoading] = useState(true);
 
-  const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation } = useChat({
+  const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation, retryLastMessage } = useChat({
     knowledgeId: selectedKbId ?? 0,
     conversationId: activeConvId,
   });
@@ -118,10 +121,51 @@ export default function Chat() {
     setInput('');
   };
 
+  // ----- 会话标题编辑 -----
+  const [editingConvId, setEditingConvId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+
+  const handleStartEditTitle = (convId: number, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingConvId(convId);
+    setEditingTitle(currentTitle);
+  };
+
+  const handleSaveTitle = async () => {
+    if (editingConvId === null) return;
+    const trimmed = editingTitle.trim();
+    if (!trimmed) return;
+    try {
+      await api.put(`/v1/conversation/${editingConvId}`, { title: trimmed });
+      setConversations((prev) =>
+        prev.map((c) => (c.conversation_id === editingConvId ? { ...c, title: trimmed } : c))
+      );
+    } catch {
+      showToast('重命名失败');
+    } finally {
+      setEditingConvId(null);
+      setEditingTitle('');
+    }
+  };
+
+  const handleCancelEditTitle = () => {
+    setEditingConvId(null);
+    setEditingTitle('');
+  };
+
   // ----- ChatTab 内部状态 (移自旧 ChatTab) -----
   const [input, setInput] = useState('');
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleTextAreaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // 自动增高：重置 height 后设为 scrollHeight
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -203,7 +247,27 @@ export default function Chat() {
                         : 'border-transparent text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    <span className="flex-1 truncate">{conv.title}</span>
+                    {editingConvId === conv.conversation_id ? (
+                      <input
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onBlur={handleSaveTitle}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveTitle();
+                          if (e.key === 'Escape') handleCancelEditTitle();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                        className="flex-1 px-2 py-0.5 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 truncate"
+                        onDoubleClick={(e) => handleStartEditTitle(conv.conversation_id, conv.title, e)}
+                      >
+                        {conv.title}
+                      </span>
+                    )}
                     <span className="text-xs text-gray-400 shrink-0">{conv.message_count}</span>
                     <button
                       onClick={(e) => handleDeleteConversation(conv.conversation_id, e)}
@@ -242,8 +306,14 @@ export default function Chat() {
 
                   {error && (
                     <div className="flex justify-center">
-                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%]">
-                        {error}
+                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%] flex items-center gap-3">
+                        <span>{error}</span>
+                        <button
+                          onClick={retryLastMessage}
+                          className="shrink-0 px-2.5 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700"
+                        >
+                          重试
+                        </button>
                       </div>
                     </div>
                   )}
@@ -254,18 +324,26 @@ export default function Chat() {
                         className={`max-w-[75%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
                           msg.role === 'user'
                             ? 'bg-indigo-600 text-white'
-                            : 'bg-white border border-gray-200 text-gray-800'
+                            : 'bg-white border border-gray-200 text-gray-800 prose prose-sm max-w-none'
                         }`}
                       >
-                        {msg.content}
+                        {msg.role === 'user' ? (
+                          msg.content
+                        ) : (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        )}
                       </div>
                     </div>
                   ))}
 
                   {streamingContent && (
                     <div className="flex justify-start">
-                      <div className="max-w-[75%] rounded-xl px-4 py-3 bg-white border border-gray-200 text-sm leading-relaxed text-gray-800">
-                        {streamingContent}
+                      <div className="max-w-[75%] rounded-xl px-4 py-3 bg-white border border-gray-200 text-sm leading-relaxed text-gray-800 prose prose-sm max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                          {streamingContent}
+                        </ReactMarkdown>
                         <span className="inline-block w-2 h-4 bg-indigo-600 ml-0.5 animate-pulse" />
                       </div>
                     </div>
@@ -301,13 +379,14 @@ export default function Chat() {
               <div className="border-t border-gray-200 bg-white p-4 shrink-0">
                 <div className="max-w-3xl mx-auto flex gap-2">
                   <textarea
+                    ref={textAreaRef}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={handleTextAreaChange}
                     onKeyDown={handleKeyDown}
                     placeholder={activeConvId ? '输入你的问题...' : '请先创建或选择一个对话'}
                     rows={1}
                     disabled={!activeConvId}
-                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50 disabled:text-gray-400 overflow-hidden"
                   />
                   {loading ? (
                     <button

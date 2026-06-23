@@ -119,26 +119,6 @@ def extract_text_from_docx(file_path: str) -> str:
     return full_text
 
 
-def extract_text(file_path: str) -> str:
-    """
-    统一文档文本提取接口。
-    根据文件后缀名自动调用对应的解析器。
-    """
-    ext = os.path.splitext(file_path)[1].lower()
-
-    if ext == '.pdf':
-        return extract_text_from_pdf(file_path)
-    elif ext in ['.docx', '.doc']:
-        # 注意：python-docx 原生只支持 .docx。
-        # 如果是老版 .doc，在 Linux 环境下通常需要借助 libreoffice 转换。
-        # 这里为了演示核心逻辑，统一视为 docx 处理。遇到老 doc 可能会抛异常。
-        return extract_text_from_docx(file_path)
-    else:
-        raise ValueError(f"不支持的文件格式解析: {ext}")
-
-
-
-
 
 def chunk_text_by_headers(text: str) -> List[Dict[str, Any]]:
     """

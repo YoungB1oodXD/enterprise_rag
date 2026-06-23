@@ -12,6 +12,7 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<RAGSource[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // 用 ref 镜像 messages，避免闭包捕获过期值
@@ -102,6 +103,7 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.message || '请求失败，请稍后重试');
+        setLastFailedContent(content);
       }
     } finally {
       setLoading(false);
@@ -109,9 +111,16 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
     }
   }, [knowledgeId, conversationId, loading]);
 
+  const retryLastMessage = useCallback(() => {
+    if (!lastFailedContent) return;
+    setError(null);
+    setLastFailedContent(null);
+    sendMessage(lastFailedContent);
+  }, [lastFailedContent, sendMessage]);
+
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
-  return { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation };
+  return { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation, lastFailedContent, retryLastMessage };
 }
