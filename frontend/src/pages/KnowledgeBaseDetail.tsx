@@ -91,7 +91,7 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
       });
       fetchDocs();
     } catch (err: any) {
-      alert(err.response?.data?.detail || '上传失败');
+      showToast(err.response?.data?.detail || '上传失败');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -104,7 +104,7 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
       await api.delete(`/v1/document/${docId}`);
       setDocs((prev) => prev.filter((d) => d.document_id !== docId));
     } catch (err: any) {
-      alert(err.response?.data?.detail || '删除失败');
+      showToast(err.response?.data?.detail || '删除失败');
     }
   };
 

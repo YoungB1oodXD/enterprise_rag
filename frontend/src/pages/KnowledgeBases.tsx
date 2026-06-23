@@ -53,7 +53,7 @@ export default function KnowledgeBases() {
       setShowCreate(false);
       setTitle('');
     } catch (err: any) {
-      alert(err.response?.data?.detail || '创建失败');
+      showToast(err.response?.data?.detail || '创建失败');
     }
   };
 
@@ -63,7 +63,7 @@ export default function KnowledgeBases() {
       await api.delete(`/v1/knowledge_base/${id}`);
       setKbList((prev) => prev.filter((kb) => kb.knowledge_id !== id));
     } catch (err: any) {
-      alert(err.response?.data?.detail || '删除失败');
+      showToast(err.response?.data?.detail || '删除失败');
     }
   };
 
