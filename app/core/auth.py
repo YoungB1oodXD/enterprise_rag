@@ -6,6 +6,7 @@ JWT 认证模块
 - get_current_user() FastAPI 依赖注入，从请求中提取当前用户
 - hash_password() / verify_password() 密码哈希与验证
 """
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,7 +18,7 @@ from passlib.context import CryptContext
 from app.db.session import get_session
 from app.db.models import User
 
-SECRET_KEY = "rag-enterprise-secret-key-change-in-production"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "rag-enterprise-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
