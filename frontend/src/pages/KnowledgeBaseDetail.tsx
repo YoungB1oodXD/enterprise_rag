@@ -7,6 +7,8 @@ import {
   ArrowLeftIcon,
   DocumentTextIcon,
   TrashIcon,
+  EyeIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 export default function KnowledgeBaseDetail() {
@@ -36,6 +38,9 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [previewDocId, setPreviewDocId] = useState<number | null>(null);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [previewFileType, setPreviewFileType] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = useCallback(async () => {
@@ -108,6 +113,14 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
     }
   };
 
+  const handlePreview = (docId: number, title: string, fileType: string) => {
+    setPreviewDocId(docId);
+    setPreviewTitle(title);
+    setPreviewFileType(fileType);
+  };
+
+  const isPdf = previewFileType === 'application/pdf' || previewFileType.includes('pdf');
+
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
       completed: 'bg-green-100 text-green-700',
@@ -169,6 +182,15 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {statusBadge(doc.process_status)}
+                {doc.process_status === 'completed' && (
+                  <button
+                    onClick={() => handlePreview(doc.document_id, doc.title, doc.file_type)}
+                    className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg"
+                    title="预览"
+                  >
+                    <EyeIcon className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={() => handleDelete(doc.document_id)}
                   className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
@@ -178,6 +200,41 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 文档预览弹窗 */}
+      {previewDocId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPreviewDocId(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-[90vw] h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
+              <h3 className="text-sm font-medium text-gray-900 truncate">{previewTitle}</h3>
+              <button onClick={() => setPreviewDocId(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0">
+              {isPdf ? (
+                <iframe
+                  src={`/v1/document/${previewDocId}/file`}
+                  className="w-full h-full"
+                  title={previewTitle}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                  <DocumentTextIcon className="w-12 h-12 mb-3" />
+                  <p className="text-sm mb-4">该格式暂不支持在线预览</p>
+                  <a
+                    href={`/v1/document/${previewDocId}/file`}
+                    download
+                    className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                  >
+                    下载文件
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
