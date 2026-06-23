@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api/client';
 import { useChat } from '../hooks/useChat';
 import { useToast } from '../store/toast';
-import type { KnowledgeBase, Conversation, ConversationDetail, ChatMessage } from '../types';
+import type { KnowledgeBase, Conversation, ConversationDetail, ChatMessage, ConversationListResponse } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -24,6 +24,11 @@ export default function Chat() {
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
   const [convLoading, setConvLoading] = useState(false);
   const [kbLoading, setKbLoading] = useState(true);
+  const [convPage, setConvPage] = useState(1);
+  const [convTotal, setConvTotal] = useState(0);
+  const [convSearch, setConvSearch] = useState('');
+  const pageSize = 20;
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation, retryLastMessage } = useChat({
     knowledgeId: selectedKbId ?? 0,
