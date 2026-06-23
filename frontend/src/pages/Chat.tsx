@@ -278,7 +278,7 @@ export default function Chat() {
               </div>
             ) : conversations.length === 0 ? (
               <div className="p-6 text-center text-gray-400 text-sm">
-                <p>{selectedKbId ? '暂无对话' : '请先选择知识库'}</p>
+                <p>{convSearch ? '未找到匹配的对话' : (selectedKbId ? '暂无对话' : '请先选择知识库')}</p>
               </div>
             ) : (
               <div className="py-1">
