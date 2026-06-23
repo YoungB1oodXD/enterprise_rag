@@ -11,29 +11,7 @@ from app.api.schemas import RAGSource, ChatMessage
 
 logger = get_logger(__name__)
 
-_llm_client = None
-
-
-def _get_llm_client():
-    """懒加载 LLM 客户端，第一次调用时初始化，之后复用"""
-    global _llm_client
-    if _llm_client is not None:
-        return _llm_client
-
-    if not settings.rag.llm_api_key:
-        raise ValueError(
-            "LLM API Key 未配置！\n"
-            "请设置环境变量：export DASHSCOPE_API_KEY='your-key'\n"
-            "Windows PowerShell：$env:DASHSCOPE_API_KEY='your-key'"
-        )
-
-    from openai import OpenAI
-    _llm_client = OpenAI(
-        api_key=settings.rag.llm_api_key,
-        base_url=settings.rag.llm_base_url,
-    )
-    logger.info("LLM 客户端初始化成功")
-    return _llm_client
+from app.core.llm_client import get_llm_client as _get_llm_client
 
 
 # ============================================================

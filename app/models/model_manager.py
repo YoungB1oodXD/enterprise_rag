@@ -12,23 +12,11 @@ from typing import List, Union
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.llm_client import get_llm_client
 
 logger = get_logger(__name__)
 
 _embedding_model = None
-
-
-def _get_lazy_llm_client():
-    """复用 qa_service 的懒加载模式，初始化 OpenAI 客户端"""
-    from openai import OpenAI
-
-    if not settings.rag.llm_api_key:
-        raise ValueError("DASHSCOPE_API_KEY 未配置，Embedding API 无法使用")
-
-    return OpenAI(
-        api_key=settings.rag.llm_api_key,
-        base_url=settings.rag.llm_base_url,
-    )
 
 
 def get_embedding(text: Union[str, List[str]]) -> np.ndarray:
@@ -90,7 +78,7 @@ def _embedding_with_retry(client, model_name: str, batch: List[str], max_retries
 def _get_embedding_api(texts: List[str]) -> np.ndarray:
     """通过 DashScope API 获取 embedding（自动按 batch_size=10 分批，带重试）"""
     model_name = settings.rag.embedding_model
-    client = _get_lazy_llm_client()
+    client = get_llm_client()
     batch_size = 10
 
     logger.info(f"API Embedding: {len(texts)} 条文本，模型：{model_name}，分批大小={batch_size}")

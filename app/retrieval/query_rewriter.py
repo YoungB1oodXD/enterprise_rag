@@ -22,6 +22,7 @@ from typing import List
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.core.llm_client import get_llm_client
 
 logger = get_logger(__name__)
 
@@ -60,14 +61,7 @@ def _get_rewrite_client():
     if _rewrite_client is not None:
         return _rewrite_client
 
-    if not settings.rag.llm_api_key:
-        raise ValueError("LLM API Key 未配置，无法执行 Query Rewrite")
-
-    from openai import OpenAI
-    _rewrite_client = OpenAI(
-        api_key=settings.rag.llm_api_key,
-        base_url=settings.rag.llm_base_url,
-    )
+    _rewrite_client = get_llm_client()
     return _rewrite_client
 
 
