@@ -56,22 +56,50 @@ export default function Chat() {
     fetch();
   }, []);
 
-  // 2. 切换知识库时加载会话列表
+  // 2. 加载会话列表（支持搜索与分页）
+  const fetchConversations = useCallback(async (kbId: number, keyword: string, pageNum: number) => {
+    setConvLoading(true);
+    try {
+      const res = await api.get<ConversationListResponse>('/v1/conversation/list', {
+        params: { knowledge_id: kbId, search: keyword, page: pageNum, page_size: pageSize },
+      });
+      if (res.data.items) {
+        setConversations(res.data.items);
+        setConvTotal(res.data.total);
+      }
+    } catch {
+      showToast('获取会话列表失败');
+    } finally {
+      setConvLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedKbId) return;
     setActiveConvId(null);
     loadConversation([]);
-    setConvLoading(true);
-
-    api.get<Conversation[]>('/v1/conversation/list', { params: { knowledge_id: selectedKbId } })
-      .then((res) => {
-        if (Array.isArray(res.data)) {
-          setConversations(res.data);
-        }
-      })
-      .catch(() => showToast('获取会话列表失败'))
-      .finally(() => setConvLoading(false));
+    setConvPage(1);
+    setConvSearch('');
+    fetchConversations(selectedKbId, '', 1);
   }, [selectedKbId]);
+
+  // 搜索防抖
+  const handleSearchChange = (value: string) => {
+    setConvSearch(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      if (selectedKbId) {
+        setConvPage(1);
+        fetchConversations(selectedKbId, value, 1);
+      }
+    }, 300);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (!selectedKbId || newPage < 1) return;
+    setConvPage(newPage);
+    fetchConversations(selectedKbId, convSearch, newPage);
+  };
 
   // 3. 选中会话时加载消息
   const handleSelectConversation = useCallback(async (convId: number) => {
