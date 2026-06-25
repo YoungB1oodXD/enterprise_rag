@@ -1,4 +1,5 @@
 # main.py
+import json
 import time
 import os
 import uuid
@@ -599,7 +600,6 @@ def get_conversation(conversation_id: int, current_user: User = Depends(get_curr
             sources = None
             if msg.sources:
                 try:
-                    import json
                     sources_data = json.loads(msg.sources)
                     sources = [RAGSourceSchema(**item) for item in sources_data]
                 except Exception:
@@ -675,7 +675,6 @@ def _persist_streaming_response(generator, conversation_id: int, user_query: str
         # 透传所有事件，同时收集 chunk 和 sources
         if event.startswith("data: ") and not event.startswith("data: [DONE]"):
             try:
-                import json
                 payload = json.loads(event[6:].strip())
                 if "chunk" in payload:
                     full_content += payload["chunk"]
