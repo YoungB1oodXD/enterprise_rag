@@ -602,8 +602,8 @@ def get_conversation(conversation_id: int, current_user: User = Depends(get_curr
                 try:
                     sources_data = json.loads(msg.sources)
                     sources = [RAGSourceSchema(**item) for item in sources_data]
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("sources JSON 解析失败: %s", e)
             messages.append(ConversationMessageResponse(
                 response_code=200,
                 response_msg="ok",
@@ -681,8 +681,8 @@ def _persist_streaming_response(generator, conversation_id: int, user_query: str
                 if "sources" in payload:
                     collected_sources = payload["sources"]
                     sources_json = json.dumps(payload["sources"], ensure_ascii=False)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("SSE 事件解析失败: %s", e)
 
         yield event
 
