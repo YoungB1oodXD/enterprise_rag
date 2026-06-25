@@ -17,8 +17,8 @@ Query Rewrite 模块
   3. 改写用的 LLM 调用 temperature=0.0，保证稳定性
   4. 只保留最近 4 轮历史（太长超 token，太短没上下文）
 """
+import re
 import traceback
-from typing import List
 
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -77,6 +77,21 @@ def _get_rewrite_client():
     return _rewrite_client
 
 
+def _should_rewrite(query: str, history: list) -> bool:
+    """
+    判断当前 query 是否需要改写。
+    只有明显包含指代或上下文依赖的短 query 才改写。
+    """
+    # query 较长（>=10 字）且不含代词 → 大概率已是独立问题
+    if len(query) >= 10:
+        return False
+    # 检查是否包含汉语中指代性词语
+    pronouns = re.search(r'[这那它他她其哪]', query)
+    if pronouns:
+        return True
+    return False
+
+
 def rewrite_query(query: str, history: list) -> str:
     """
     将多轮对话中的模糊提问改写成完整独立的问题。
@@ -101,6 +116,13 @@ def rewrite_query(query: str, history: list) -> str:
     user_messages = [m for m in history if m.role == "user"]
     if len(user_messages) <= 1:
         logger.debug("第一轮对话，跳过 Query Rewrite")
+        return query
+
+    # ============================================================
+    # 触发条件检查：只有明显依赖上下文的短 query 才改写
+    # ============================================================
+    if not _should_rewrite(query, history):
+        logger.debug(f"Query 无需改写（完整问题）: '{query[:50]}'")
         return query
 
     # ============================================================
