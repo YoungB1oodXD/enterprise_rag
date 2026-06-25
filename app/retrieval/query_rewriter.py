@@ -23,8 +23,12 @@ import traceback
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.core.llm_client import get_llm_client
+from app.utils.cache import LRUCache
 
 logger = get_logger(__name__)
+
+# 改写缓存：相同上下文+问题在 5 分钟内复用结果
+rewrite_cache = LRUCache(capacity=200, ttl=300)
 
 # ============================================================
 # Query Rewrite 的 Prompt
@@ -126,6 +130,18 @@ def rewrite_query(query: str, history: list) -> str:
         return query
 
     # ============================================================
+    # 缓存检查：相同上下文+query 在 5 分钟内复用
+    # ============================================================
+    history_str_for_cache = "|".join(
+        f"{m.role}:{m.content[-50:]}" for m in history[-4:]
+    )
+    cache_key = f"rewrite:{hash(history_str_for_cache)}:{query}"
+    cached = rewrite_cache.get(cache_key)
+    if cached is not None:
+        logger.info(f"Query Rewrite 命中缓存: '{query}' → '{cached}'")
+        return cached
+
+    # ============================================================
     # 构造历史对话字符串
     #
     # 只取最近 4 轮（8条消息：4 user + 4 assistant），原因：
@@ -173,6 +189,7 @@ def rewrite_query(query: str, history: list) -> str:
             return query
 
         logger.info(f"Query Rewrite: '{query}' → '{rewritten}'")
+        rewrite_cache.set(cache_key, rewritten)
         return rewritten
 
     except Exception:
