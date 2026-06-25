@@ -42,6 +42,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.routers.auth import router as auth_router
+app.include_router(auth_router)
+
 UPLOAD_DIR = settings.base_dir / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -99,51 +102,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "processing_time": 0.0,
         }
     )
-
-
-# ==========================================
-# 认证
-# ==========================================
-@app.post("/auth/login", summary="用户登录")
-def login(req: LoginRequest):
-    start_time = time.time()
-    with get_session() as session:
-        user = session.query(User).filter(User.username == req.username).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-        if not verify_password(req.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="用户名或密码错误")
-
-        token = create_access_token(data={"sub": str(user.id)})
-        return LoginResponse(
-            access_token=token,
-            token_type="bearer",
-            username=user.username,
-        )
-
-
-@app.post("/auth/register", summary="用户注册")
-def register(req: RegisterRequest):
-    start_time = time.time()
-    with get_session() as session:
-        existing = session.query(User).filter(User.username == req.username).first()
-        if existing:
-            raise HTTPException(status_code=409, detail="用户名已存在")
-
-        user = User(
-            username=req.username,
-            password_hash=hash_password(req.password),
-        )
-        session.add(user)
-        session.flush()
-
-        token = create_access_token(data={"sub": str(user.id)})
-        return LoginResponse(
-            access_token=token,
-            token_type="bearer",
-            username=user.username,
-        )
 
 
 # ==========================================
