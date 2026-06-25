@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import type { ChatMessage, RAGSource } from '../types';
+import { getAuthHeaders } from '../api/client';
 
 interface UseChatOptions {
   knowledgeId: number;
@@ -43,7 +44,6 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
     const activeConvId = convId !== undefined ? convId : conversationId;
 
     try {
-      const token = localStorage.getItem('token');
       const body: Record<string, unknown> = { knowledge_id: knowledgeId, messages: history };
       if (activeConvId) {
         body.conversation_id = activeConvId;
@@ -53,7 +53,7 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(body),
         signal: controller.signal,
