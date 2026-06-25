@@ -12,9 +12,11 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from typing import List, Dict, Any
+from io import BytesIO
 
 from app.core.config import settings
 from app.core.logger import get_logger
+from app.utils.vl_client import describe_image
 
 logger = get_logger(__name__)
 
@@ -64,9 +66,48 @@ def _extract_tables_from_page(page) -> str:
     return result
 
 
+def _describe_images_on_page(page, page_num: int) -> str:
+    """提取 pdfplumber 页面的图片，用 VL 模型描述。"""
+    if not page.images:
+        return ""
+
+    result = ""
+    try:
+        pil_image = page.to_image(resolution=150).original
+        for img_idx, img_info in enumerate(page.images):
+            try:
+                x0, y0, x1, y1 = img_info["x0"], img_info["top"], img_info["x1"], img_info["bottom"]
+                # 裁剪图片区域
+                cropped = pil_image.crop((x0, y0, x1, y1))
+                # 限制图片大小
+                max_dim = 1024
+                if cropped.width > max_dim or cropped.height > max_dim:
+                    ratio = max_dim / max(cropped.width, cropped.height)
+                    cropped = cropped.resize((int(cropped.width * ratio), int(cropped.height * ratio)))
+
+                buf = BytesIO()
+                cropped.save(buf, format="PNG")
+                img_bytes = buf.getvalue()
+
+                if len(img_bytes) > 10 * 1024 * 1024:
+                    logger.warning(f"第 {page_num} 页图片 {img_idx} 过大，跳过 VL 描述")
+                    continue
+
+                description = describe_image(img_bytes)
+                if description:
+                    result += f"<<IMAGE:{img_idx + 1}>> {description} <<END_IMAGE:{img_idx + 1}>>\n"
+            except Exception as e:
+                logger.warning(f"第 {page_num} 页图片 {img_idx} 处理失败: {e}")
+                continue
+    except Exception as e:
+        logger.warning(f"第 {page_num} 页图片提取失败: {e}")
+
+    return result
+
+
 def extract_text_from_pdf(file_path: str) -> str:
     """
-    从 PDF 中提取文本，包含表格提取和扫描件 OCR 兜底。
+    从 PDF 中提取文本，包含表格提取、图片 VL 描述和扫描件 OCR 兜底。
     """
     full_text = ""
     logger.info(f"开始解析PDF文件: {file_path}")
@@ -82,7 +123,14 @@ def extract_text_from_pdf(file_path: str) -> str:
                 except Exception as e:
                     logger.warning(f"第 {i + 1} 页表格提取失败: {e}")
 
-                # 2. 文本提取
+                # 2. 图片 VL 描述
+                try:
+                    image_desc = _describe_images_on_page(page, i + 1)
+                    page_out += image_desc
+                except Exception as e:
+                    logger.warning(f"第 {i + 1} 页图片描述失败: {e}")
+
+                # 3. 文本提取
                 page_text = page.extract_text()
                 if page_text and len(page_text.strip()) > 20:
                     page_out += page_text + "\n\n"
