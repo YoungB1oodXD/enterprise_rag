@@ -29,31 +29,73 @@ _ARTICLE_PATTERN = re.compile(
 )
 
 
+def _extract_tables_from_page(page) -> str:
+    """提取 pdfplumber 页面的表格区域，渲染为 Markdown 管道格式。"""
+    tables = page.extract_tables()
+    if not tables:
+        return ""
+
+    result = ""
+    for t_idx, table in enumerate(tables):
+        if not table or len(table) < 2:
+            continue
+        # 过滤空行和全 None 行
+        rows = []
+        for row in table:
+            cleaned = [cell.strip() if cell else "" for cell in row]
+            if any(cleaned):
+                rows.append(cleaned)
+
+        if len(rows) < 2:
+            continue
+
+        result += f"<<TABLE:{t_idx + 1}>>\n"
+        # 表头
+        result += "| " + " | ".join(rows[0]) + " |\n"
+        # 分隔行
+        result += "| " + " | ".join(["---"] * len(rows[0])) + " |\n"
+        # 数据行
+        for row in rows[1:]:
+            # 补齐长度
+            while len(row) < len(rows[0]):
+                row.append("")
+            result += "| " + " | ".join(row[:len(rows[0])]) + " |\n"
+        result += f"<<END_TABLE:{t_idx + 1}>>\n\n"
+    return result
+
+
 def extract_text_from_pdf(file_path: str) -> str:
     """
-    从 PDF 中提取文本，包含扫描件 OCR 兜底。
-
-    处理逻辑：
-    - 正常 PDF：直接用 pdfplumber 提取文字
-    - 扫描件（提取文字少于20字）：转图片后用 tesseract OCR
+    从 PDF 中提取文本，包含表格提取和扫描件 OCR 兜底。
     """
     full_text = ""
     logger.info(f"开始解析PDF文件: {file_path}")
     try:
         with pdfplumber.open(file_path) as pdf:
             for i, page in enumerate(pdf.pages):
+                page_out = f"<<PAGE:{i + 1}>>\n"
+
+                # 1. 表格提取
+                try:
+                    table_text = _extract_tables_from_page(page)
+                    page_out += table_text
+                except Exception as e:
+                    logger.warning(f"第 {i + 1} 页表格提取失败: {e}")
+
+                # 2. 文本提取
                 page_text = page.extract_text()
                 if page_text and len(page_text.strip()) > 20:
-                    full_text += f"<<PAGE:{i + 1}>>\n{page_text}\n\n"
+                    page_out += page_text + "\n\n"
                 else:
                     logger.info(f"第 {i + 1} 页文本量少，尝试 OCR...")
                     img = page.to_image(resolution=300).original
                     try:
                         ocr_text = pytesseract.image_to_string(img, lang='chi_sim+eng')
-                        # OCR 结果同样加页码标记
-                        full_text += f"<<PAGE:{i + 1}>>\n{ocr_text}\n\n"
+                        page_out += ocr_text + "\n\n"
                     except Exception as e:
                         logger.warning(f"第 {i + 1} 页 OCR 失败: {e}")
+
+                full_text += page_out
     except Exception as e:
         logger.error(f"解析 PDF 失败: {e}")
         raise
