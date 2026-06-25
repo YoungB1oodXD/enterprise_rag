@@ -23,7 +23,12 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "rag-enterprise-secret-key-change-in-pr
 if os.getenv("JWT_SECRET_KEY") is None:
     logging.warning("JWT_SECRET_KEY 未设置，使用默认密钥（不安全），请在生产环境中设置环境变量 JWT_SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
+_jwt_expire_str = os.getenv("JWT_EXPIRE_MINUTES", "60")
+try:
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(_jwt_expire_str)
+except ValueError:
+    logging.warning("JWT_EXPIRE_MINUTES 格式无效: '%s'，使用默认值 60 分钟", _jwt_expire_str)
+    ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
