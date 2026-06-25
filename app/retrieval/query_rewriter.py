@@ -35,21 +35,33 @@ logger = get_logger(__name__)
 # 3. 要求只输出改写结果：防止 LLM 加解释文字
 # 4. 如果不需要改写：原样返回，不强行改写
 # ============================================================
-_REWRITE_PROMPT_TEMPLATE = """你是一个问题改写助手。
-你的任务是：根据对话历史，将用户的最新提问改写成一个完整、独立的问题，使其不依赖上下文也能被理解。
+_REWRITE_SYSTEM_PROMPT = """你是一个问题改写助手。根据对话历史，将用户的最新提问改写成一个完整、独立的问题。
 
 改写规则：
 1. 如果最新提问本身已经完整清晰，直接原样返回，不要改写。
-2. 如果最新提问依赖上下文（如"那这个呢"、"例外情况呢"、"还有吗"），
-   请结合对话历史补全指代词和缺失信息。
+2. 如果最新提问依赖上下文（如"那这个呢"、"例外情况呢"、"还有吗"），请结合对话历史补全指代词和缺失信息。
 3. 只输出改写后的问题，不要任何解释、标点符号以外的内容。
 
-对话历史（最近几轮）：
-{history_str}
-
-用户最新提问：{query}
-
-改写后的完整问题："""
+改写示例：
+---
+对话历史：
+用户：第三条的规定是什么？
+助手：第三条规定：申请人须提交身份证明材料。
+用户最新提问：那例外情况呢？
+改写后：第三条规定了什么例外情况？
+---
+对话历史：
+用户：请告诉我办理护照的流程
+助手：办理护照需要以下步骤：1. 准备材料 2. 提交申请
+用户最新提问：要带什么材料？
+改写后：办理护照需要带什么材料？
+---
+对话历史：
+用户：这个政策适用于哪些企业？
+助手：适用于所有在华注册的外资企业。
+用户最新提问：内资企业可以吗？
+改写后：这个政策内资企业可以适用吗？
+---"""
 
 
 # 懒加载 LLM 客户端：不在模块级初始化，避免因 Key 未配置导致服务启动失败
@@ -118,19 +130,17 @@ def rewrite_query(query: str, history: list) -> str:
     # ============================================================
     # 调用 LLM 改写
     # ============================================================
-    prompt = _REWRITE_PROMPT_TEMPLATE.format(
-        history_str=history_str,
-        query=query,
-    )
+    user_prompt = f"对话历史（最近几轮）：\n{history_str}\n\n用户最新提问：{query}\n\n改写后的完整问题："
 
     try:
         client = _get_rewrite_client()
         response = client.chat.completions.create(
             model=settings.rag.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            # temperature=0.0：改写任务要求稳定，不需要创造性
+            messages=[
+                {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
             temperature=0.0,
-            # max_tokens 设小一点：改写结果应该很短，一句话就够
             max_tokens=150,
         )
         rewritten = response.choices[0].message.content.strip()
