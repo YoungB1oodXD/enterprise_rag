@@ -11,7 +11,8 @@ from typing import List
 
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, hash_password, verify_password, create_access_token
+from app.core.es_client import es
 from app.db.session import get_session
 from app.db.models import KnowledgeBase, Document, Conversation, ConversationMessage, User
 from app.api.schemas import (
@@ -106,7 +107,6 @@ def login(req: LoginRequest):
         if not user:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-        from app.core.auth import verify_password, create_access_token
         if not verify_password(req.password, user.password_hash):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
@@ -126,7 +126,6 @@ def register(req: RegisterRequest):
         if existing:
             raise HTTPException(status_code=409, detail="用户名已存在")
 
-        from app.core.auth import hash_password, create_access_token
         user = User(
             username=req.username,
             password_hash=hash_password(req.password),
@@ -402,8 +401,6 @@ def delete_document(document_id: int, current_user: User = Depends(get_current_u
     #   delete_by_query 一次请求删除所有匹配的文档，效率高得多。
     # ============================================================
     try:
-        from app.core.es_client import es
-
         # 先检查索引是否存在，不存在则跳过 ES 清理
         if not es.indices.exists(index=settings.es.index_chunk_info):
             logger.warning(f"ES 索引 {settings.es.index_chunk_info} 不存在，跳过 ES 清理")
@@ -689,7 +686,6 @@ def _persist_streaming_response(generator, conversation_id: int, user_query: str
         # 遇到结束标记后，保存 assistant 回答
         if event == "data: [DONE]\n\n" and full_content.strip():
             try:
-                from app.db.session import get_session
                 with get_session() as session:
                     msg = ConversationMessage(
                         conversation_id=conversation_id,
@@ -710,8 +706,7 @@ def _persist_streaming_response(generator, conversation_id: int, user_query: str
                         if conv and conv.title == "新对话":
                             conv.title = (user_query[:30] + "...") if len(user_query) > 30 else user_query
             except Exception as e:
-                from app.core.logger import get_logger
-                get_logger(__name__).error(f"持久化会话消息失败: {e}")
+                logger.error(f"持久化会话消息失败: {e}")
 
 
 @app.post("/chat/stream", summary="智能知识库问答（流式打字机效果，支持对话持久化）")
