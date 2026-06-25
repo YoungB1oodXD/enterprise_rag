@@ -30,6 +30,11 @@ logger = get_logger(__name__)
 
 app = FastAPI(title="RAG Enterprise - 企业级智能知识库问答系统", version="2.0.0")
 
+# 启动时检查 JWT 密钥配置
+from app.core.auth import SECRET_KEY as _jwt_secret
+if _jwt_secret == "rag-enterprise-secret-key-change-in-production":
+    logger.warning("JWT 使用默认密钥，请设置 JWT_SECRET_KEY 环境变量")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
