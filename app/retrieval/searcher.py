@@ -5,8 +5,12 @@ from app.core.es_client import es
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.models.model_manager import get_embedding, get_rerank_scores
+from app.utils.cache import LRUCache
 
 logger = get_logger(__name__)
+
+# 向量缓存：相同 query 在 TTL 内复用 embedding，避免重复调用模型
+embedding_cache = LRUCache(capacity=500, ttl=3600)
 
 
 def reciprocal_rank_fusion(search_results_list: List[List[Dict]], k: int = 60) -> List[Dict]:
@@ -62,9 +66,16 @@ def hybrid_search(query: str, knowledge_id: int) -> List[Dict[str, Any]]:
         logger.error(f"BM25 检索失败: {e}")
         bm25_hits = []
 
-    # 2. 向量检索 (调用 model_manager 获取向量)
+    # 2. 向量检索 (调用 model_manager 获取向量，优先使用缓存)
     try:
-        query_vector = get_embedding(query)[0].tolist()  # 获取单句向量并转为 list
+        cache_key = f"embed:{query}"
+        cached = embedding_cache.get(cache_key)
+        if cached is not None:
+            query_vector = cached
+            logger.debug(f"向量缓存命中: '{query[:50]}'")
+        else:
+            query_vector = get_embedding(query)[0].tolist()
+            embedding_cache.set(cache_key, query_vector)
         knn_query = {
             "field": "embedding_vector",
             "query_vector": query_vector,
