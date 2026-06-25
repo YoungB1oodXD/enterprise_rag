@@ -1,30 +1,12 @@
 # main.py
-import json
-import time
-import os
 import uuid
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from typing import List
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.logger import get_logger
-from app.core.auth import get_current_user, hash_password, verify_password, create_access_token
-from app.core.es_client import es
-from app.db.session import get_session
-from app.db.models import KnowledgeBase, Document, Conversation, ConversationMessage, User
-from app.api.schemas import (
-    KnowledgeBaseCreateRequest, KnowledgeBaseResponse,
-    DocumentResponse, RAGRequest, RAGStreamRequest, RAGResponse, ChatMessage,
-    LoginRequest, RegisterRequest, LoginResponse,
-    ConversationResponse, ConversationMessageResponse, ConversationDetailResponse, ConversationListResponse,
-    CreateConversationRequest, UpdateConversationRequest,
-)
-from app.api.schemas import RAGSource as RAGSourceSchema
-from app.services.document_processor import process_document_background
-from app.services.qa_service import chat_with_knowledge_base, stream_chat_with_knowledge_base
 
 logger = get_logger(__name__)
 
@@ -52,29 +34,6 @@ app.include_router(knowledge_base_router)
 app.include_router(document_router)
 app.include_router(conversation_router)
 app.include_router(chat_router)
-
-UPLOAD_DIR = settings.base_dir / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-ALLOWED_CONTENT_TYPES = {
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    # 纯文本
-    "text/plain",
-    "text/markdown",
-    # CSV
-    "text/csv",
-    "application/csv",
-    # Excel
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    # JSON / JSONL
-    "application/json",
-    "application/x-ndjson",
-    "application/jsonl",
-}
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
 
 
 # ==========================================
@@ -112,9 +71,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-
 # ==========================================
-# 8. 健康检查
+# 健康检查
 # ==========================================
 @app.get("/health", summary="健康检查")
 def health_check():
