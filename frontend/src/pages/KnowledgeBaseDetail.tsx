@@ -63,6 +63,8 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
   const [previewFileType, setPreviewFileType] = useState('');
+  const [previewTextContent, setPreviewTextContent] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = useCallback(async () => {
@@ -133,9 +135,87 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
     setPreviewDocId(docId);
     setPreviewTitle(title);
     setPreviewFileType(fileType);
+
+    const textTypes = ['text/plain', 'text/markdown', 'application/json', 'text/csv', 'application/csv'];
+    if (textTypes.includes(fileType)) {
+      setPreviewLoading(true);
+      setPreviewTextContent(null);
+      api.get(`/v1/document/${docId}/file`, { responseType: 'text' }).then((res) => {
+        setPreviewTextContent(res.data);
+      }).catch(() => {
+        setPreviewTextContent('加载文件内容失败');
+      }).finally(() => {
+        setPreviewLoading(false);
+      });
+    } else {
+      setPreviewTextContent(null);
+    }
   };
 
   const isPdf = previewFileType === 'application/pdf' || previewFileType.includes('pdf');
+
+  const renderPreviewContent = () => {
+    if (previewLoading) {
+      return (
+        <div className="flex items-center justify-center h-full text-slate-400">
+          <p className="text-sm">加载中...</p>
+        </div>
+      );
+    }
+
+    if (previewTextContent !== null) {
+      const isCsv = previewFileType === 'text/csv' || previewFileType === 'application/csv';
+      if (isCsv) {
+        const lines = previewTextContent.split('\n').filter(Boolean);
+        const rows = lines.map((l) => l.split(','));
+        return (
+          <div className="overflow-auto h-full p-4">
+            <table className="w-full text-xs border-collapse">
+              <tbody>
+                {rows.map((cols, ri) => (
+                  <tr key={ri} className={ri === 0 ? 'bg-slate-50 font-medium' : ''}>
+                    {cols.map((c, ci) => <td key={ci} className="border border-slate-200 px-3 py-1.5 whitespace-nowrap">{c}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      return (
+        <div className="overflow-auto h-full p-4">
+          <pre className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-mono">{previewTextContent}</pre>
+        </div>
+      );
+    }
+
+    // PDF
+    if (isPdf) {
+      const token = localStorage.getItem('token') || '';
+      return (
+        <iframe
+          src={`/v1/document/${previewDocId}/file?token=${token}`}
+          className="w-full h-full"
+          title={previewTitle}
+        />
+      );
+    }
+
+    // 不支持预览的格式
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-400">
+        <DocumentTextIcon className="w-14 h-14 mb-3 text-slate-300" />
+        <p className="text-sm mb-4">该格式暂不支持在线预览</p>
+        <a
+          href={`/v1/document/${previewDocId}/file`}
+          download
+          className="px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          下载文件
+        </a>
+      </div>
+    );
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -215,25 +295,7 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
               </button>
             </div>
             <div className="flex-1 min-h-0">
-              {isPdf ? (
-                <iframe
-                  src={`/v1/document/${previewDocId}/file`}
-                  className="w-full h-full"
-                  title={previewTitle}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                  <DocumentTextIcon className="w-14 h-14 mb-3 text-slate-300" />
-                  <p className="text-sm mb-4">该格式暂不支持在线预览</p>
-                  <a
-                    href={`/v1/document/${previewDocId}/file`}
-                    download
-                    className="px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    下载文件
-                  </a>
-                </div>
-              )}
+              {renderPreviewContent()}
             </div>
           </div>
         </div>

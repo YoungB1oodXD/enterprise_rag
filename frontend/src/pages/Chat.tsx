@@ -29,6 +29,7 @@ export default function Chat() {
   const [convSearch, setConvSearch] = useState('');
   const pageSize = 20;
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectConvIdRef = useRef<number | null>(null);
 
   const { messages, streamingContent, sources, loading, error, sendMessage, stopStreaming, loadConversation, retryLastMessage } = useChat({
     knowledgeId: selectedKbId ?? 0,
@@ -81,7 +82,7 @@ export default function Chat() {
     setConvPage(1);
     setConvSearch('');
     fetchConversations(selectedKbId, '', 1);
-  }, [selectedKbId]);
+  }, [selectedKbId, fetchConversations]);
 
   // 搜索防抖
   const handleSearchChange = (value: string) => {
@@ -101,17 +102,21 @@ export default function Chat() {
     fetchConversations(selectedKbId, convSearch, newPage);
   };
 
-  // 3. 选中会话时加载消息
+  // 3. 选中会话时加载消息（带 stale 保护）
   const handleSelectConversation = useCallback(async (convId: number) => {
+    selectConvIdRef.current = convId;
     setActiveConvId(convId);
     try {
       const res = await api.get<ConversationDetail>(`/v1/conversation/${convId}`);
+      if (selectConvIdRef.current !== convId) return; // 用户已切换到其他会话
       const msgs: ChatMessage[] = (res.data.messages || []).map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
+        sources: m.sources,
       }));
       loadConversation(msgs);
     } catch {
+      if (selectConvIdRef.current !== convId) return;
       showToast('获取会话详情失败');
       loadConversation([]);
     }
@@ -269,7 +274,7 @@ export default function Chat() {
               />
             )}
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto min-h-0">
             {convLoading ? (
               <div className="p-4 space-y-3">
                 {[1, 2, 3].map((i) => (
@@ -348,7 +353,7 @@ export default function Chat() {
         </aside>
 
         {/* 右侧：聊天区 */}
-        <main className="flex-1 flex flex-col bg-slate-50/50">
+        <main className="flex-1 flex flex-col bg-slate-50/50 min-h-0">
           {!selectedKbId ? (
             <div className="flex-1 flex items-center justify-center text-slate-400">
               <div className="text-center">
@@ -357,9 +362,9 @@ export default function Chat() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col min-h-0">
               {/* 消息列表 */}
-              <div className="flex-1 overflow-auto p-6">
+              <div className="flex-1 overflow-auto p-6 min-h-0">
                 <div className="max-w-3xl mx-auto space-y-5">
                   {messages.length === 0 && !streamingContent && !error && (
                     <div className="text-center py-16 text-slate-400">
@@ -384,22 +389,47 @@ export default function Chat() {
                   )}
 
                   {messages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-800 shadow-sm prose prose-sm max-w-none'
-                        }`}
-                      >
-                        {msg.role === 'user' ? (
-                          msg.content
-                        ) : (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                            {msg.content}
-                          </ReactMarkdown>
-                        )}
+                    <div key={i}>
+                      <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                            msg.role === 'user'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-white border border-slate-200 text-slate-800 shadow-sm prose prose-sm max-w-none'
+                          }`}
+                        >
+                          {msg.role === 'user' ? (
+                            msg.content
+                          ) : (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                              {msg.content}
+                            </ReactMarkdown>
+                          )}
+                        </div>
                       </div>
+                      {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+                        <div className="flex justify-start mt-2">
+                          <div className="max-w-[70%] bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
+                            <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
+                            {msg.sources.map((src, si) => (
+                              <div key={si} className="mb-1.5 last:mb-0">
+                                <button
+                                  onClick={() => toggleSource(i * 1000 + si)}
+                                  className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
+                                >
+                                  {expandedSources[i * 1000 + si] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+                                  [{si + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
+                                </button>
+                                {expandedSources[i * 1000 + si] && (
+                                  <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
+                                    {src.chunk_content}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
 
@@ -414,25 +444,27 @@ export default function Chat() {
                     </div>
                   )}
 
-                  {sources.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
-                      <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
-                      {sources.map((src, i) => (
-                        <div key={i} className="mb-1.5 last:mb-0">
-                          <button
-                            onClick={() => toggleSource(i)}
-                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
-                          >
-                            {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
-                            [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
-                          </button>
-                          {expandedSources[i] && (
-                            <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
-                              {src.chunk_content}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                  {streamingContent && sources.length > 0 && (
+                    <div className="flex justify-start">
+                      <div className="max-w-[70%] bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
+                        <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
+                        {sources.map((src, i) => (
+                          <div key={i} className="mb-1.5 last:mb-0">
+                            <button
+                              onClick={() => toggleSource(i)}
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
+                            >
+                              {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+                              [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
+                            </button>
+                            {expandedSources[i] && (
+                              <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
+                                {src.chunk_content}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 

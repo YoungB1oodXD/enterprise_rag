@@ -23,7 +23,9 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
   const loadConversation = useCallback((msgs: ChatMessage[]) => {
     setMessages(msgs);
     setStreamingContent('');
-    setSources([]);
+    // 从最后一条 assistant 消息中恢复 sources
+    const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant' && m.sources);
+    setSources(lastAssistant?.sources || []);
     setError(null);
   }, []);
 
@@ -98,7 +100,7 @@ export function useChat({ knowledgeId, conversationId }: UseChatOptions) {
         }
       }
 
-      setMessages((prev) => [...prev, { role: 'assistant', content: fullContent }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: fullContent, sources }]);
       setStreamingContent('');
     } catch (err: any) {
       if (err.name !== 'AbortError') {

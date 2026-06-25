@@ -22,6 +22,7 @@ export interface LoginResponse {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  sources?: RAGSource[]
 }
 
 export interface RAGSource {
