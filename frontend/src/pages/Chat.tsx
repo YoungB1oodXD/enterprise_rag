@@ -125,7 +125,6 @@ export default function Chat() {
       const conv: Conversation = res.data;
       setActiveConvId(conv.conversation_id);
       loadConversation([]);
-      // 切回第一页并重新加载列表
       setConvPage(1);
       setConvSearch('');
       fetchConversations(selectedKbId, '', 1);
@@ -189,7 +188,7 @@ export default function Chat() {
     setEditingTitle('');
   };
 
-  // ----- ChatTab 内部状态 (移自旧 ChatTab) -----
+  // ----- ChatTab 内部状态 -----
   const [input, setInput] = useState('');
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -197,7 +196,6 @@ export default function Chat() {
 
   const handleTextAreaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    // 自动增高：重置 height 后设为 scrollHeight
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
@@ -218,17 +216,19 @@ export default function Chat() {
     setExpandedSources((prev) => ({ ...prev, [idx]: !prev[idx] }));
   };
 
+  const totalPages = Math.ceil(convTotal / pageSize);
+
   return (
     <div className="h-full flex flex-col">
       {/* ── 顶部：知识库选择器 + 新对话按钮 ── */}
-      <div className="flex items-center gap-3 px-6 h-14 border-b border-gray-200 bg-white shrink-0">
-        <ChatBubbleLeftRightIcon className="w-5 h-5 text-indigo-600" />
-        <span className="font-semibold text-gray-900">智能问答</span>
+      <div className="flex items-center gap-3 px-6 h-14 border-b border-slate-200 bg-white shrink-0">
+        <ChatBubbleLeftRightIcon className="w-5 h-5 text-blue-600" />
+        <span className="font-semibold text-slate-900">智能问答</span>
         <div className="ml-auto flex items-center gap-3">
           <select
             value={selectedKbId ?? ''}
             onChange={(e) => setSelectedKbId(Number(e.target.value) || null)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition-shadow"
           >
             {kbLoading ? (
               <option value="">加载中...</option>
@@ -245,7 +245,7 @@ export default function Chat() {
           <button
             onClick={handleNewConversation}
             disabled={!selectedKbId}
-            className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             <PlusIcon className="w-4 h-4" />
             新对话
@@ -256,16 +256,16 @@ export default function Chat() {
       {/* ── 主内容区：会话列表 + 聊天区 ── */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：会话列表 */}
-        <aside className="w-64 border-r border-gray-200 bg-white flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b border-gray-100 space-y-2">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">对话历史</h2>
+        <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0">
+          <div className="px-4 py-3 border-b border-slate-100 space-y-2">
+            <h2 className="text-xs font-semibold text-slate-400">对话历史</h2>
             {selectedKbId && (
               <input
                 type="text"
                 value={convSearch}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="搜索对话..."
-                className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
               />
             )}
           </div>
@@ -273,11 +273,11 @@ export default function Chat() {
             {convLoading ? (
               <div className="p-4 space-y-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse" />
+                  <div key={i} className="h-12 bg-slate-100 rounded-lg animate-pulse" />
                 ))}
               </div>
             ) : conversations.length === 0 ? (
-              <div className="p-6 text-center text-gray-400 text-sm">
+              <div className="p-6 text-center text-slate-400 text-sm">
                 <p>{convSearch ? '未找到匹配的对话' : (selectedKbId ? '暂无对话' : '请先选择知识库')}</p>
               </div>
             ) : (
@@ -286,10 +286,10 @@ export default function Chat() {
                   <div
                     key={conv.conversation_id}
                     onClick={() => handleSelectConversation(conv.conversation_id)}
-                    className={`group flex items-center gap-2 px-4 py-3 cursor-pointer text-sm border-l-2 ${
+                    className={`group flex items-center gap-2 px-4 py-3 cursor-pointer text-sm border-l-[3px] transition-all duration-150 ${
                       activeConvId === conv.conversation_id
-                        ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
-                        : 'border-transparent text-gray-700 hover:bg-gray-50'
+                        ? 'border-l-blue-600 bg-blue-50 text-blue-700'
+                        : 'border-l-transparent text-slate-700 hover:bg-slate-50 hover:border-l-slate-300'
                     }`}
                   >
                     {editingConvId === conv.conversation_id ? (
@@ -303,7 +303,7 @@ export default function Chat() {
                         }}
                         onClick={(e) => e.stopPropagation()}
                         autoFocus
-                        className="flex-1 px-2 py-0.5 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="flex-1 px-2 py-0.5 border border-blue-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     ) : (
                       <span
@@ -313,10 +313,10 @@ export default function Chat() {
                         {conv.title}
                       </span>
                     )}
-                    <span className="text-xs text-gray-400 shrink-0">{conv.message_count}</span>
+                    <span className="text-xs text-slate-400 shrink-0">{conv.message_count}</span>
                     <button
                       onClick={(e) => handleDeleteConversation(conv.conversation_id, e)}
-                      className="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
+                      className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                     >
                       <TrashIcon className="w-3.5 h-3.5" />
                     </button>
@@ -325,20 +325,20 @@ export default function Chat() {
               </div>
             )}
             {/* 分页控件 */}
-            {!convLoading && convTotal > pageSize && (
-              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 text-xs text-gray-500">
+            {!convLoading && totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500">
                 <button
                   onClick={() => handlePageChange(convPage - 1)}
                   disabled={convPage <= 1}
-                  className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                  className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
                 >
                   上一页
                 </button>
-                <span>第 {convPage} / {Math.ceil(convTotal / pageSize)} 页</span>
+                <span className="text-slate-400">第 {convPage} / {totalPages} 页</span>
                 <button
                   onClick={() => handlePageChange(convPage + 1)}
-                  disabled={convPage >= Math.ceil(convTotal / pageSize)}
-                  className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                  disabled={convPage >= totalPages}
+                  className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
                 >
                   下一页
                 </button>
@@ -348,11 +348,11 @@ export default function Chat() {
         </aside>
 
         {/* 右侧：聊天区 */}
-        <main className="flex-1 flex flex-col bg-gray-50">
+        <main className="flex-1 flex flex-col bg-slate-50/50">
           {!selectedKbId ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
+            <div className="flex-1 flex items-center justify-center text-slate-400">
               <div className="text-center">
-                <ChatBubbleLeftRightIcon className="w-12 h-12 mx-auto mb-3" />
+                <ChatBubbleLeftRightIcon className="w-14 h-14 mx-auto mb-4 text-slate-300" />
                 <p className="text-sm">请选择一个知识库开始对话</p>
               </div>
             </div>
@@ -360,9 +360,9 @@ export default function Chat() {
             <div className="flex-1 flex flex-col">
               {/* 消息列表 */}
               <div className="flex-1 overflow-auto p-6">
-                <div className="max-w-3xl mx-auto space-y-4">
+                <div className="max-w-3xl mx-auto space-y-5">
                   {messages.length === 0 && !streamingContent && !error && (
-                    <div className="text-center py-16 text-gray-400">
+                    <div className="text-center py-16 text-slate-400">
                       <p className="text-sm">
                         {activeConvId ? '继续对话，输入你的问题' : '选择一个对话或点击"新对话"开始'}
                       </p>
@@ -371,11 +371,11 @@ export default function Chat() {
 
                   {error && (
                     <div className="flex justify-center">
-                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%] flex items-center gap-3">
+                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%] flex items-center gap-3 shadow-sm">
                         <span>{error}</span>
                         <button
                           onClick={retryLastMessage}
-                          className="shrink-0 px-2.5 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700"
+                          className="shrink-0 px-3 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors"
                         >
                           重试
                         </button>
@@ -386,10 +386,10 @@ export default function Chat() {
                   {messages.map((msg, i) => (
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div
-                        className={`max-w-[75%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
+                        className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                           msg.role === 'user'
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-white border border-gray-200 text-gray-800 prose prose-sm max-w-none'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'bg-white border border-slate-200 text-slate-800 shadow-sm prose prose-sm max-w-none'
                         }`}
                       >
                         {msg.role === 'user' ? (
@@ -405,29 +405,29 @@ export default function Chat() {
 
                   {streamingContent && (
                     <div className="flex justify-start">
-                      <div className="max-w-[75%] rounded-xl px-4 py-3 bg-white border border-gray-200 text-sm leading-relaxed text-gray-800 prose prose-sm max-w-none">
+                      <div className="max-w-[70%] rounded-2xl px-4 py-3 bg-white border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-800 prose prose-sm max-w-none">
                         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
                           {streamingContent}
                         </ReactMarkdown>
-                        <span className="inline-block w-2 h-4 bg-indigo-600 ml-0.5 animate-pulse" />
+                        <span className="inline-block w-2 h-4 bg-blue-600 ml-0.5 animate-pulse rounded-sm" />
                       </div>
                     </div>
                   )}
 
                   {sources.length > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-4 text-sm">
-                      <p className="text-xs font-medium text-gray-500 mb-2">参考来源</p>
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
+                      <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
                       {sources.map((src, i) => (
-                        <div key={i} className="mb-1 last:mb-0">
+                        <div key={i} className="mb-1.5 last:mb-0">
                           <button
                             onClick={() => toggleSource(i)}
-                            className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs"
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
                           >
                             {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
                             [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
                           </button>
                           {expandedSources[i] && (
-                            <p className="mt-1 text-xs text-gray-500 bg-white rounded-lg p-2 border border-gray-100 whitespace-pre-wrap">
+                            <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
                               {src.chunk_content}
                             </p>
                           )}
@@ -441,7 +441,7 @@ export default function Chat() {
               </div>
 
               {/* 输入区 */}
-              <div className="border-t border-gray-200 bg-white p-4 shrink-0">
+              <div className="border-t border-slate-200 bg-white p-4 shrink-0">
                 <div className="max-w-3xl mx-auto flex gap-2">
                   <textarea
                     ref={textAreaRef}
@@ -451,12 +451,12 @@ export default function Chat() {
                     placeholder={activeConvId ? '输入你的问题...' : '请先创建或选择一个对话'}
                     rows={1}
                     disabled={!activeConvId}
-                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50 disabled:text-gray-400 overflow-hidden"
+                    className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400 overflow-hidden transition-shadow"
                   />
                   {loading ? (
                     <button
                       onClick={stopStreaming}
-                      className="px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                      className="px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
                     >
                       <StopIcon className="w-5 h-5" />
                     </button>
@@ -464,7 +464,7 @@ export default function Chat() {
                     <button
                       onClick={handleSend}
                       disabled={!input.trim() || !activeConvId}
-                      className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                     >
                       <PaperAirplaneIcon className="w-5 h-5" />
                     </button>

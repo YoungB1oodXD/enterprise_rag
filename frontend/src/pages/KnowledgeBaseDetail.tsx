@@ -19,17 +19,39 @@ export default function KnowledgeBaseDetail() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="flex items-center gap-3 px-6 h-14 border-b border-gray-200 bg-white shrink-0">
-        <button onClick={() => navigate('/knowledge-bases')} className="p-1 text-gray-400 hover:text-gray-600">
+      <header className="flex items-center gap-3 px-6 h-14 border-b border-slate-200 bg-white shrink-0">
+        <button onClick={() => navigate('/knowledge-bases')} className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
           <ArrowLeftIcon className="w-5 h-5" />
         </button>
-        <h1 className="text-base font-semibold text-gray-900">{kbTitle || '知识库'}</h1>
+        <h1 className="text-base font-semibold text-slate-900">{kbTitle || '知识库'}</h1>
       </header>
 
       <div className="flex-1 overflow-auto">
         <DocumentsTab knowledgeId={knowledgeId} onTitleChange={setKbTitle} />
       </div>
     </div>
+  );
+}
+
+const STATUS_MAP: Record<string, string> = {
+  completed: 'bg-emerald-50 text-emerald-700',
+  processing: 'bg-amber-50 text-amber-700',
+  pending: 'bg-slate-50 text-slate-500',
+  failed: 'bg-red-50 text-red-700',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  completed: '已完成',
+  processing: '解析中',
+  pending: '等待中',
+  failed: '失败',
+};
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_MAP[status] || 'bg-slate-100 text-slate-500'}`}>
+      {STATUS_LABELS[status] || status}
+    </span>
   );
 }
 
@@ -61,14 +83,8 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
     fetchDocs();
   }, [fetchDocs]);
 
-  // Set KB title from first doc's knowledge_id
   useEffect(() => {
-    if (docs.length > 0) {
-      // We'll set a default title based on the KB
-      onTitleChange(`知识库 #${knowledgeId}`);
-    } else {
-      onTitleChange(`知识库 #${knowledgeId}`);
-    }
+    onTitleChange(`知识库 #${knowledgeId}`);
   }, [docs, knowledgeId, onTitleChange]);
 
   // Poll for doc status updates
@@ -121,36 +137,16 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
 
   const isPdf = previewFileType === 'application/pdf' || previewFileType.includes('pdf');
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      completed: 'bg-green-100 text-green-700',
-      processing: 'bg-yellow-100 text-yellow-700',
-      pending: 'bg-gray-100 text-gray-500',
-      failed: 'bg-red-100 text-red-700',
-    };
-    const labels: Record<string, string> = {
-      completed: '已完成',
-      processing: '解析中',
-      pending: '等待中',
-      failed: '失败',
-    };
-    return (
-      <span className={`px-2 py-0.5 rounded text-xs font-medium ${map[status] || 'bg-gray-100 text-gray-500'}`}>
-        {labels[status] || status}
-      </span>
-    );
-  };
-
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-gray-500">共 {docs.length} 个文档</p>
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-sm text-slate-500">共 {docs.length} 个文档</p>
         <div>
           <input type="file" ref={fileRef} onChange={handleUpload} accept=".pdf,.docx,.doc" className="hidden" />
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             <DocumentTextIcon className="w-4 h-4" />
             {uploading ? '上传中...' : '上传文档'}
@@ -161,31 +157,36 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
       {loading ? (
         <div className="animate-pulse space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-gray-100 rounded-xl" />
+            <div key={i} className="h-16 bg-slate-100 rounded-xl" />
           ))}
         </div>
       ) : docs.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <DocumentTextIcon className="w-12 h-12 mx-auto mb-3" />
+        <div className="text-center py-16 text-slate-400">
+          <DocumentTextIcon className="w-14 h-14 mx-auto mb-4 text-slate-300" />
           <p className="text-sm">暂无文档，点击右上角上传</p>
         </div>
       ) : (
         <div className="space-y-2">
           {docs.map((doc) => (
-            <div key={doc.document_id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-200">
-              <div className="flex items-center gap-3 min-w-0">
-                <DocumentTextIcon className="w-5 h-5 text-gray-400 shrink-0" />
+            <div
+              key={doc.document_id}
+              className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-colors"
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-9 h-9 bg-slate-50 rounded-lg flex items-center justify-center shrink-0">
+                  <DocumentTextIcon className="w-4.5 h-4.5 text-slate-400" />
+                </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{doc.title}</p>
-                  <p className="text-xs text-gray-400">{doc.file_type}</p>
+                  <p className="text-sm font-medium text-slate-900 truncate">{doc.title}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{doc.file_type}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                {statusBadge(doc.process_status)}
+              <div className="flex items-center gap-2 shrink-0">
+                <StatusBadge status={doc.process_status} />
                 {doc.process_status === 'completed' && (
                   <button
                     onClick={() => handlePreview(doc.document_id, doc.title, doc.file_type)}
-                    className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg"
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="预览"
                   >
                     <EyeIcon className="w-4 h-4" />
@@ -193,7 +194,7 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
                 )}
                 <button
                   onClick={() => handleDelete(doc.document_id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                 >
                   <TrashIcon className="w-4 h-4" />
                 </button>
@@ -206,10 +207,10 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
       {/* 文档预览弹窗 */}
       {previewDocId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPreviewDocId(null)}>
-          <div className="bg-white rounded-xl shadow-xl w-[90vw] h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 shrink-0">
-              <h3 className="text-sm font-medium text-gray-900 truncate">{previewTitle}</h3>
-              <button onClick={() => setPreviewDocId(null)} className="p-1 text-gray-400 hover:text-gray-600">
+          <div className="bg-white rounded-2xl shadow-xl w-[90vw] h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+              <h3 className="text-sm font-medium text-slate-900 truncate">{previewTitle}</h3>
+              <button onClick={() => setPreviewDocId(null)} className="p-1 text-slate-400 hover:text-slate-600 transition-colors">
                 <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
@@ -221,13 +222,13 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
                   title={previewTitle}
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                  <DocumentTextIcon className="w-12 h-12 mb-3" />
+                <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                  <DocumentTextIcon className="w-14 h-14 mb-3 text-slate-300" />
                   <p className="text-sm mb-4">该格式暂不支持在线预览</p>
                   <a
                     href={`/v1/document/${previewDocId}/file`}
                     download
-                    className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                    className="px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     下载文件
                   </a>
@@ -240,4 +241,3 @@ function DocumentsTab({ knowledgeId, onTitleChange }: { knowledgeId: number; onT
     </div>
   );
 }
-
