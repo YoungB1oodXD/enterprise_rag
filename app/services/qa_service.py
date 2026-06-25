@@ -15,6 +15,55 @@ from app.core.llm_client import get_llm_client as _get_llm_client
 
 
 # ============================================================
+# LLM 调用辅助函数
+# ============================================================
+
+def _call_llm(messages: list, tools: list = None) -> str:
+    """
+    封装 LLM 调用，返回文本回答。
+    失败时返回空字符串，不抛出异常。
+    """
+    try:
+        client = _get_llm_client()
+        kwargs = dict(
+            model=settings.rag.llm_model,
+            messages=messages,
+            temperature=settings.rag.llm_temperature,
+            top_p=settings.rag.llm_top_p,
+            max_tokens=settings.rag.llm_max_tokens,
+        )
+        if tools:
+            kwargs["tools"] = tools
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        logger.error(f"LLM 调用失败:\n{traceback.format_exc()}")
+        return ""
+
+
+def _call_llm_with_tool(messages: list, tools: list):
+    """
+    调用 LLM 并处理 function calling。
+    返回 (content, tool_calls)，tool_calls 为空列表时表示无工具调用。
+    """
+    try:
+        client = _get_llm_client()
+        response = client.chat.completions.create(
+            model=settings.rag.llm_model,
+            messages=messages,
+            tools=tools,
+            temperature=settings.rag.llm_temperature,
+            top_p=settings.rag.llm_top_p,
+            max_tokens=settings.rag.llm_max_tokens,
+        )
+        msg = response.choices[0].message
+        return msg.content or "", msg.tool_calls or []
+    except Exception as e:
+        logger.error(f"LLM function calling 失败:\n{traceback.format_exc()}")
+        return "", []
+
+
+# ============================================================
 # 政务场景的 System Prompt
 #
 # 设计原则：
@@ -123,6 +172,59 @@ def chat_with_knowledge_base(
     logger.info(f"接收到用户提问: {query}")
     search_query = rewrite_query(query, history)
 
+    # ── 1.5 Agent/Tool 路由 ──────────────────────────────────────
+    from app.agent.registry import ToolRegistry, auto_route
+
+    registry = ToolRegistry()
+    registry.initialize()
+    tool_name = auto_route(query)
+
+    if tool_name:
+        logger.info(f"触发工具调用: {tool_name}")
+        tool = registry.get(tool_name)
+        if tool:
+            # 构造支持 function calling 的消息
+            tool_messages = [{"role": "system", "content": "你是一个数据库查询助手。根据用户的问题，生成合适的 SQL 查询语句。"}]
+            recent_history = history[:-1][-4:]
+            for msg in recent_history:
+                tool_messages.append({"role": msg.role.value, "content": msg.content})
+            tool_messages.append({"role": "user", "content": query})
+
+            content, tool_calls = _call_llm_with_tool(tool_messages, registry.get_openai_tools())
+
+            if tool_calls:
+                tc = tool_calls[0]
+                if tc.function.name == tool_name:
+                    import json as _json
+                    try:
+                        args = _json.loads(tc.function.arguments)
+                    except Exception:
+                        args = {}
+                    logger.info(f"执行工具 {tool_name}，参数: {args}")
+                    result = tool.execute(args)
+
+                    tool_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }],
+                    })
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+
+                    answer = _call_llm(tool_messages)
+                    if answer:
+                        logger.info("工具调用完成，生成回答")
+                        return answer, []
+
+            logger.warning("工具调用失败，降级到 RAG 流程")
+
     # ── 2. 混合检索 + Rerank ─────────────────────────────────────
     retrieved_docs = hybrid_search(search_query, knowledge_id)
 
@@ -180,6 +282,62 @@ def stream_chat_with_knowledge_base(
     # 1. Query Rewrite
     logger.info(f"[流式] 接收到提问: {query}")
     search_query = rewrite_query(query, history)
+
+    # 1.5 Agent/Tool 路由（阻塞执行，不流式）
+    from app.agent.registry import ToolRegistry, auto_route
+
+    registry = ToolRegistry()
+    registry.initialize()
+    tool_name = auto_route(query)
+
+    if tool_name:
+        logger.info(f"[流式] 触发工具调用: {tool_name}")
+        tool = registry.get(tool_name)
+        if tool:
+            tool_messages = [{"role": "system", "content": "你是一个数据库查询助手。根据用户的问题，生成合适的 SQL 查询语句。"}]
+            recent_history = history[:-1][-4:]
+            for msg in recent_history:
+                tool_messages.append({"role": msg.role.value, "content": msg.content})
+            tool_messages.append({"role": "user", "content": query})
+
+            content, tool_calls = _call_llm_with_tool(tool_messages, registry.get_openai_tools())
+
+            if tool_calls:
+                tc = tool_calls[0]
+                if tc.function.name == tool_name:
+                    import json as _json
+                    try:
+                        args = _json.loads(tc.function.arguments)
+                    except Exception:
+                        args = {}
+                    logger.info(f"[流式] 执行工具 {tool_name}，参数: {args}")
+                    result = tool.execute(args)
+
+                    tool_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }],
+                    })
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+
+                    # 非流式生成工具结果的自然语言回答
+                    answer = _call_llm(tool_messages)
+                    if answer:
+                        logger.info("[流式] 工具调用完成，流式返回结果")
+                        yield f"data: {json.dumps({'chunk': answer}, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
+            logger.warning("[流式] 工具调用失败，降级到 RAG 流程")
+            yield f"data: {json.dumps({'chunk': '工具调用不可用，将使用知识库检索回答问题。'}, ensure_ascii=False)}\n\n"
 
     # 2. 混合检索
     retrieved_docs = hybrid_search(search_query, knowledge_id)
