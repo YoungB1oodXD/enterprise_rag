@@ -3,18 +3,13 @@ import api from '../api/client';
 import { useChat } from '../hooks/useChat';
 import { useToast } from '../store/toast';
 import type { KnowledgeBase, Conversation, ConversationDetail, ChatMessage, ConversationListResponse } from '../types';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
 import {
   ChatBubbleLeftRightIcon,
   PlusIcon,
-  TrashIcon,
-  PaperAirplaneIcon,
-  StopIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
 } from '@heroicons/react/24/outline';
+import ChatSidebar from '../components/ChatSidebar';
+import MessageList from '../components/MessageList';
+import ChatInput from '../components/ChatInput';
 
 export default function Chat() {
   const { showToast } = useToast();
@@ -108,7 +103,7 @@ export default function Chat() {
     setActiveConvId(convId);
     try {
       const res = await api.get<ConversationDetail>(`/v1/conversation/${convId}`);
-      if (selectConvIdRef.current !== convId) return; // 用户已切换到其他会话
+      if (selectConvIdRef.current !== convId) return;
       const msgs: ChatMessage[] = (res.data.messages || []).map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -155,6 +150,7 @@ export default function Chat() {
   }, [activeConvId, loadConversation, showToast]);
 
   // 6. 发送消息
+  const [input, setInput] = useState('');
   const handleSend = () => {
     if (!input.trim() || loading) return;
     sendMessage(input.trim(), activeConvId ?? undefined);
@@ -193,11 +189,9 @@ export default function Chat() {
     setEditingTitle('');
   };
 
-  // ----- ChatTab 内部状态 -----
-  const [input, setInput] = useState('');
+  // ----- 内部状态 -----
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleTextAreaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -261,96 +255,25 @@ export default function Chat() {
       {/* ── 主内容区：会话列表 + 聊天区 ── */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：会话列表 */}
-        <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b border-slate-100 space-y-2">
-            <h2 className="text-xs font-semibold text-slate-400">对话历史</h2>
-            {selectedKbId && (
-              <input
-                type="text"
-                value={convSearch}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="搜索对话..."
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
-              />
-            )}
-          </div>
-          <div className="flex-1 overflow-auto min-h-0">
-            {convLoading ? (
-              <div className="p-4 space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-12 bg-slate-100 rounded-lg animate-pulse" />
-                ))}
-              </div>
-            ) : conversations.length === 0 ? (
-              <div className="p-6 text-center text-slate-400 text-sm">
-                <p>{convSearch ? '未找到匹配的对话' : (selectedKbId ? '暂无对话' : '请先选择知识库')}</p>
-              </div>
-            ) : (
-              <div className="py-1">
-                {conversations.map((conv) => (
-                  <div
-                    key={conv.conversation_id}
-                    onClick={() => handleSelectConversation(conv.conversation_id)}
-                    className={`group flex items-center gap-2 px-4 py-3 cursor-pointer text-sm border-l-[3px] transition-all duration-150 ${
-                      activeConvId === conv.conversation_id
-                        ? 'border-l-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-l-transparent text-slate-700 hover:bg-slate-50 hover:border-l-slate-300'
-                    }`}
-                  >
-                    {editingConvId === conv.conversation_id ? (
-                      <input
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        onBlur={handleSaveTitle}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveTitle();
-                          if (e.key === 'Escape') handleCancelEditTitle();
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        className="flex-1 px-2 py-0.5 border border-blue-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <span
-                        className="flex-1 truncate"
-                        onDoubleClick={(e) => handleStartEditTitle(conv.conversation_id, conv.title, e)}
-                      >
-                        {conv.title}
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-400 shrink-0">{conv.message_count}</span>
-                    <button
-                      onClick={(e) => handleDeleteConversation(conv.conversation_id, e)}
-                      className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <TrashIcon className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* 分页控件 */}
-            {!convLoading && totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500">
-                <button
-                  onClick={() => handlePageChange(convPage - 1)}
-                  disabled={convPage <= 1}
-                  className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
-                >
-                  上一页
-                </button>
-                <span className="text-slate-400">第 {convPage} / {totalPages} 页</span>
-                <button
-                  onClick={() => handlePageChange(convPage + 1)}
-                  disabled={convPage >= totalPages}
-                  className="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
-                >
-                  下一页
-                </button>
-              </div>
-            )}
-          </div>
-        </aside>
+        <ChatSidebar
+          conversations={conversations}
+          convLoading={convLoading}
+          convSearch={convSearch}
+          convPage={convPage}
+          totalPages={totalPages}
+          selectedKbId={selectedKbId}
+          activeConvId={activeConvId}
+          editingConvId={editingConvId}
+          editingTitle={editingTitle}
+          onSearchChange={handleSearchChange}
+          onSelectConversation={handleSelectConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onStartEditTitle={handleStartEditTitle}
+          onSaveTitle={handleSaveTitle}
+          onCancelEditTitle={handleCancelEditTitle}
+          onPageChange={handlePageChange}
+          setEditingTitle={setEditingTitle}
+        />
 
         {/* 右侧：聊天区 */}
         <main className="flex-1 flex flex-col bg-slate-50/50 min-h-0">
@@ -365,144 +288,29 @@ export default function Chat() {
             <div className="flex-1 flex flex-col min-h-0">
               {/* 消息列表 */}
               <div className="flex-1 overflow-auto p-6 min-h-0">
-                <div className="max-w-3xl mx-auto space-y-5">
-                  {messages.length === 0 && !streamingContent && !error && (
-                    <div className="text-center py-16 text-slate-400">
-                      <p className="text-sm">
-                        {activeConvId ? '继续对话，输入你的问题' : '选择一个对话或点击"新对话"开始'}
-                      </p>
-                    </div>
-                  )}
-
-                  {error && (
-                    <div className="flex justify-center">
-                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm max-w-[75%] flex items-center gap-3 shadow-sm">
-                        <span>{error}</span>
-                        <button
-                          onClick={retryLastMessage}
-                          className="shrink-0 px-3 py-1 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors"
-                        >
-                          重试
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {messages.map((msg, i) => (
-                    <div key={i}>
-                      <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div
-                          className={`max-w-[70%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                            msg.role === 'user'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-white border border-slate-200 text-slate-800 shadow-sm prose prose-sm max-w-none'
-                          }`}
-                        >
-                          {msg.role === 'user' ? (
-                            msg.content
-                          ) : (
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                              {msg.content}
-                            </ReactMarkdown>
-                          )}
-                        </div>
-                      </div>
-                      {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
-                        <div className="flex justify-start mt-2">
-                          <div className="max-w-[70%] bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
-                            <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
-                            {msg.sources.map((src, si) => (
-                              <div key={si} className="mb-1.5 last:mb-0">
-                                <button
-                                  onClick={() => toggleSource(i * 1000 + si)}
-                                  className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
-                                >
-                                  {expandedSources[i * 1000 + si] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
-                                  [{si + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
-                                </button>
-                                {expandedSources[i * 1000 + si] && (
-                                  <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
-                                    {src.chunk_content}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {streamingContent && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[70%] rounded-2xl px-4 py-3 bg-white border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-800 prose prose-sm max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                          {streamingContent}
-                        </ReactMarkdown>
-                        <span className="inline-block w-2 h-4 bg-blue-600 ml-0.5 animate-pulse rounded-sm" />
-                      </div>
-                    </div>
-                  )}
-
-                  {streamingContent && sources.length > 0 && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[70%] bg-white border border-slate-200 rounded-xl p-4 text-sm shadow-sm">
-                        <p className="text-xs font-medium text-slate-500 mb-2">参考来源</p>
-                        {sources.map((src, i) => (
-                          <div key={i} className="mb-1.5 last:mb-0">
-                            <button
-                              onClick={() => toggleSource(i)}
-                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs transition-colors"
-                            >
-                              {expandedSources[i] ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
-                              [{i + 1}] {src.document_name} · 第{src.page_number}页 · {src.chunk_content?.slice(0, 50)}{src.chunk_content?.length > 50 ? '...' : ''}
-                            </button>
-                            {expandedSources[i] && (
-                              <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 whitespace-pre-wrap leading-relaxed">
-                                {src.chunk_content}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={messagesEndRef} />
-                </div>
+                <MessageList
+                  messages={messages}
+                  streamingContent={streamingContent}
+                  streamingSources={sources}
+                  error={error}
+                  expandedSources={expandedSources}
+                  activeConvId={activeConvId}
+                  onToggleSource={toggleSource}
+                  onRetry={retryLastMessage}
+                />
+                <div ref={messagesEndRef} />
               </div>
 
               {/* 输入区 */}
-              <div className="border-t border-slate-200 bg-white p-4 shrink-0">
-                <div className="max-w-3xl mx-auto flex gap-2">
-                  <textarea
-                    ref={textAreaRef}
-                    value={input}
-                    onChange={handleTextAreaChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder={activeConvId ? '输入你的问题...' : '请先创建或选择一个对话'}
-                    rows={1}
-                    disabled={!activeConvId}
-                    className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400 overflow-hidden transition-shadow"
-                  />
-                  {loading ? (
-                    <button
-                      onClick={stopStreaming}
-                      className="px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                    >
-                      <StopIcon className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleSend}
-                      disabled={!input.trim() || !activeConvId}
-                      className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                    >
-                      <PaperAirplaneIcon className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+              <ChatInput
+                input={input}
+                loading={loading}
+                disabled={!activeConvId}
+                onInputChange={handleTextAreaChange}
+                onSend={handleSend}
+                onStopStreaming={stopStreaming}
+                onKeyDown={handleKeyDown}
+              />
             </div>
           )}
         </main>

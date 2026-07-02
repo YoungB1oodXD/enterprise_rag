@@ -3,7 +3,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.db.session import get_session
-from app.db.models import User, Conversation, ConversationMessage
+from app.db.models import User, KnowledgeBase, Conversation, ConversationMessage
 from app.api.schemas import RAGRequest, RAGStreamRequest, RAGResponse, ChatMessage
 from app.core.auth import get_current_user
 from app.core.logger import get_logger
@@ -24,6 +24,15 @@ def chat(req: RAGRequest, current_user: User = Depends(get_current_user)):
     user_query = req.messages[-1].content
     if not user_query.strip():
         raise HTTPException(status_code=400, detail="问题内容不能为空")
+
+    # 验证知识库归属
+    with get_session() as session:
+        kb = session.query(KnowledgeBase).filter(
+            KnowledgeBase.knowledge_id == req.knowledge_id,
+            KnowledgeBase.user_id == current_user.id,
+        ).first()
+        if not kb:
+            raise HTTPException(status_code=404, detail="知识库不存在")
 
     answer, sources = chat_with_knowledge_base(req.knowledge_id, user_query, req.messages)
     new_messages = req.messages + [ChatMessage(role="assistant", content=answer)]
@@ -101,6 +110,15 @@ def chat_stream(req: RAGStreamRequest, current_user: User = Depends(get_current_
     user_query = req.messages[-1].content
     if not user_query.strip():
         raise HTTPException(status_code=400, detail="问题内容不能为空")
+
+    # 验证知识库归属（无论是否传 conversation_id 都检查）
+    with get_session() as session:
+        kb = session.query(KnowledgeBase).filter(
+            KnowledgeBase.knowledge_id == req.knowledge_id,
+            KnowledgeBase.user_id == current_user.id,
+        ).first()
+        if not kb:
+            raise HTTPException(status_code=404, detail="知识库不存在")
 
     # 如果传入了 conversation_id，验证所有权并保存用户消息
     if req.conversation_id:

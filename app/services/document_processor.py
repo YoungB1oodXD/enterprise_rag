@@ -99,15 +99,19 @@ def process_document_background(document_id: int):
         success_count, failed_items = bulk(es, actions, raise_on_error=False)
         logger.info(f"ES 写入完成：成功 {success_count} 条，失败 {len(failed_items)} 条")
 
-        if failed_items:
-            logger.warning(f"部分写入失败：{failed_items[:3]}")  # 只打印前3条，避免日志爆炸
-
-        # ── Session 2：更新状态为 completed ──────────────────────────
+        # ── Session 2：根据写入结果更新状态 ─────────────────────────
         with get_session() as session:
             doc = session.query(Document).filter(
                 Document.document_id == document_id
             ).first()
-            if doc:
+            if not doc:
+                logger.error(f"文档 {document_id} 在写入 ES 后被删除，状态无法更新")
+            elif failed_items:
+                error_ids = [item.get("index", {}).get("_id", "?") for item in failed_items[:10]]
+                logger.error(f"文档 {document_id} ES 批量写入失败 {len(failed_items)} 条: {error_ids}")
+                doc.process_status = "failed"
+                doc.error_msg = f"ES 写入失败 {len(failed_items)}/{len(actions)} 条，请重新上传"
+            else:
                 doc.process_status = "completed"
         logger.info(f"文档处理成功: {doc_title} (ID: {document_id})")
 

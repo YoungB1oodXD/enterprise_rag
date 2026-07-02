@@ -11,7 +11,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, setAuth } = useAuth();
   const navigate = useNavigate();
 
   if (isAuthenticated) {
@@ -25,9 +25,7 @@ export default function Login() {
 
   const handleRegister = async () => {
     const res = await api.post('/auth/register', { username, password });
-    const data = res.data;
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('username', data.username);
+    setAuth(res.data.access_token, res.data.username);
     navigate('/knowledge-bases', { replace: true });
   };
 

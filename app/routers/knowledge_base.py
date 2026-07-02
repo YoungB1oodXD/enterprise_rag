@@ -5,6 +5,11 @@ from app.db.session import get_session
 from app.db.models import User, KnowledgeBase, Document
 from app.api.schemas import KnowledgeBaseCreateRequest, KnowledgeBaseResponse, DocumentResponse
 from app.core.auth import get_current_user
+from app.core.es_client import es
+from app.core.config import settings
+from app.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/v1/knowledge_base", tags=["知识库"])
 
@@ -50,6 +55,20 @@ def list_knowledge_bases(current_user: User = Depends(get_current_user)):
 @router.delete("/{knowledge_id}", summary="删除知识库")
 def delete_knowledge_base(knowledge_id: int, current_user: User = Depends(get_current_user)):
     start_time = time.time()
+
+    # 清理 ES 数据（先于 DB 删除，ES 失败不阻塞 DB 操作）
+    try:
+        for index in [settings.es.index_chunk_info, settings.es.index_document_meta]:
+            if es.indices.exists(index=index):
+                res = es.delete_by_query(
+                    index=index,
+                    body={"query": {"term": {"knowledge_id": knowledge_id}}},
+                    refresh=True,
+                )
+                logger.info(f"ES 索引 {index} 清理完成，删除 {res.get('deleted', 0)} 条记录")
+    except Exception as e:
+        logger.warning(f"ES 清理失败（不影响数据库删除）: {e}")
+
     with get_session() as session:
         kb = session.query(KnowledgeBase).filter(
             KnowledgeBase.knowledge_id == knowledge_id,

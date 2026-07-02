@@ -1,6 +1,6 @@
 # app/services/qa_service.py
 import traceback
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import json
 from typing import Generator
 from app.core.config import settings
@@ -151,16 +151,184 @@ def build_prompt(query: str, retrieved_docs: List[Dict]) -> Tuple[str, List[RAGS
     return user_prompt, sources
 
 
+# 第二道路由：LLM 语义判断的触发关键词
+# 仅在查询包含这些词时才调用 LLM 分类（避免无意义 LLM 调用）
+_SQL_SEMANTIC_TRIGGERS = [
+    "统计", "对话", "用户", "文档", "数量", "总数",
+    "conversation", "user", "document", "knowledge_base",
+]
+
+
+def _classify_sql_intent(query: str) -> Optional[str]:
+    """
+    第二道路由：LLM 语义判断是否为数据库查询意图。
+
+    仅在查询包含数据库相关关键词时调用 LLM 做语义分类，
+    避免对纯知识库问题（法律、法规等）误判。
+    返回 "sql_query" 或 None。
+    """
+    q = query.lower().strip()
+
+    # 预筛：只有含数据库相关词才查 LLM
+    if not any(t in q for t in _SQL_SEMANTIC_TRIGGERS):
+        return None
+
+    try:
+        client = _get_llm_client()
+        resp = client.chat.completions.create(
+            model=settings.rag.llm_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "判断用户问题是关于「数据库表记录」还是「知识库内容」。\n"
+                        "数据库表包括：conversation（对话）、user（用户）、document（文档）、knowledge_base（知识库）。\n"
+                        "如果问题是查询对话数量、用户列表、文档状态等系统数据，回答：sql\n"
+                        "如果问题是咨询法律法规、政策条文等知识内容，回答：rag\n"
+                        "只回复一个词。"
+                    ),
+                },
+                {"role": "user", "content": query[:200]},
+            ],
+            temperature=0.0,
+            max_tokens=5,
+        )
+        answer = resp.choices[0].message.content.strip().lower()
+        if answer == "sql":
+            logger.info(f"LLM 语义路由判定为数据库查询: {query[:60]}")
+            return "sql_query"
+        logger.debug(f"LLM 语义路由判定为知识库查询: {query[:60]}")
+        return None
+    except Exception as e:
+        logger.warning(f"LLM 语义路由异常（降级到 RAG）: {e}")
+        return None
+
+
+def _try_tool_route(query: str, history: List[ChatMessage]) -> Tuple[bool, str]:
+    """
+    尝试路由到工具调用。
+    返回 (handled, answer)，handled=True 表示工具已处理并生成回答。
+
+    路由策略（两道闸）：
+      1. 关键词匹配 → 仅匹配明确的 SQL 语法关键词（如 SELECT, COUNT）
+      2. LLM 语义路由 → 对含数据库相关关键词的问题，用 LLM 判断是否为数据库查询意图
+         只有两道闸都通过才执行 SQL 工具，否则降级到 RAG 流程。
+    """
+    from app.agent.registry import ToolRegistry, auto_route
+
+    registry = ToolRegistry()
+    registry.initialize()
+
+    # ── 第一道闸：关键词匹配 ─────────────────────────────────────
+    tool_name = auto_route(query)
+
+    # ── 第二道闸：LLM 语义路由 ────────────────────────────────────
+    if not tool_name:
+        # 没有明确 SQL 关键词 → 用 LLM 判断是否为数据库管理意图
+        tool_name = _classify_sql_intent(query)
+
+    if not tool_name:
+        return False, ""
+
+    logger.info(f"触发工具调用: {tool_name}")
+    tool = registry.get(tool_name)
+    if not tool:
+        return False, ""
+
+    # ── 执行工具 ─────────────────────────────────────────────────
+    # 注意：即使路由判定为 SQL，LLM 在 function calling 环节仍可能拒绝调用工具
+    #（因为 system prompt 要求它确认问题确实涉及数据库表）
+    tool_messages = [{
+        "role": "system",
+        "content": (
+            "你是一个数据库查询助手。根据用户的问题，生成合适的 SQL 查询语句。\n\n"
+            "可用表：conversation, conversation_message, document, knowledge_base, user\n\n"
+            "重要：\n"
+            "1. 仅当问题明确涉及上述数据库表（如：列出用户、统计对话数、查询文档状态等）时才使用 SQL 工具。\n"
+            "2. 如果问题是关于知识库内容（法规、政策、条款等），不要使用 SQL 工具，直接回复无法回答。\n"
+            "3. 不了解表结构时，不要猜测表名或列名。"
+        ),
+    }]
+    recent_history = history[:-1][-4:]
+    for msg in recent_history:
+        tool_messages.append({"role": msg.role.value, "content": msg.content})
+    tool_messages.append({"role": "user", "content": query})
+
+    _, tool_calls = _call_llm_with_tool(tool_messages, registry.get_openai_tools())
+
+    if not tool_calls:
+        logger.warning("工具调用失败（LLM 判定不适用 SQL），降级到 RAG 流程")
+        return False, ""
+
+    tc = tool_calls[0]
+    if tc.function.name != tool_name:
+        return False, ""
+
+    import json as _json
+    try:
+        args = _json.loads(tc.function.arguments)
+    except Exception:
+        args = {}
+    logger.info(f"执行工具 {tool_name}，参数: {args}")
+    result = tool.execute(args)
+
+    tool_messages.append({
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": tc.id,
+            "type": "function",
+            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+        }],
+    })
+    tool_messages.append({
+        "role": "tool",
+        "tool_call_id": tc.id,
+        "content": result,
+    })
+
+    answer = _call_llm(tool_messages)
+    if answer:
+        logger.info("工具调用完成，生成回答")
+        return True, answer
+
+    logger.warning("工具调用失败（无回答），降级到 RAG 流程")
+    return False, ""
+
+
+def _prepare_rag(query: str, history: List[ChatMessage], knowledge_id: int):
+    """
+    执行 RAG 检索，构造 LLM 消息列表和溯源信息。
+    返回 (messages, sources)，检索无结果时 messages 为 None。
+    """
+    search_query = rewrite_query(query, history)
+    retrieved_docs = hybrid_search(search_query, knowledge_id)
+
+    if not retrieved_docs:
+        return None, []
+
+    user_prompt, sources = build_prompt(query, retrieved_docs)
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    recent_history = history[:-1][-6:]
+    for msg in recent_history:
+        messages.append({"role": msg.role.value, "content": msg.content})
+    messages.append({"role": "user", "content": user_prompt})
+
+    return messages, sources
+
+
 def chat_with_knowledge_base(
         knowledge_id: int,
         query: str,
         history: List[ChatMessage],
 ) -> Tuple[str, List[RAGSource]]:
     """
-    核心 QA 流程：
-    P0: 混合检索 -> 组装Prompt -> 调用LLM -> 返回答案+溯源
-    P1新增: Query Rewrite + 真实文档名 + history传入LLM
+    核心 QA 流程（非流式）：
+    Try Tool → RAG 检索 → 调用 LLM → 返回答案+溯源
     """
+    logger.info(f"接收到用户提问: {query}")
+
     # ── 初始化 LLM 客户端 ────────────────────────────────────────
     try:
         client = _get_llm_client()
@@ -168,89 +336,18 @@ def chat_with_knowledge_base(
         logger.error(str(e))
         return "系统未配置大模型 API Key，无法生成回答。", []
 
-    # ── 1. Query Rewrite：多轮对话时先改写再检索 ─────────────────
-    logger.info(f"接收到用户提问: {query}")
-    search_query = rewrite_query(query, history)
+    # ── 1. 工具路由 ─────────────────────────────────────────────
+    handled, answer = _try_tool_route(query, history)
+    if handled:
+        return answer, []
 
-    # ── 1.5 Agent/Tool 路由 ──────────────────────────────────────
-    from app.agent.registry import ToolRegistry, auto_route
-
-    registry = ToolRegistry()
-    registry.initialize()
-    tool_name = auto_route(query)
-
-    if tool_name:
-        logger.info(f"触发工具调用: {tool_name}")
-        tool = registry.get(tool_name)
-        if tool:
-            # 构造支持 function calling 的消息
-            tool_messages = [{"role": "system", "content": "你是一个数据库查询助手。根据用户的问题，生成合适的 SQL 查询语句。"}]
-            recent_history = history[:-1][-4:]
-            for msg in recent_history:
-                tool_messages.append({"role": msg.role.value, "content": msg.content})
-            tool_messages.append({"role": "user", "content": query})
-
-            content, tool_calls = _call_llm_with_tool(tool_messages, registry.get_openai_tools())
-
-            if tool_calls:
-                tc = tool_calls[0]
-                if tc.function.name == tool_name:
-                    import json as _json
-                    try:
-                        args = _json.loads(tc.function.arguments)
-                    except Exception:
-                        args = {}
-                    logger.info(f"执行工具 {tool_name}，参数: {args}")
-                    result = tool.execute(args)
-
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [{
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }],
-                    })
-                    tool_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-
-                    answer = _call_llm(tool_messages)
-                    if answer:
-                        logger.info("工具调用完成，生成回答")
-                        return answer, []
-
-            logger.warning("工具调用失败，降级到 RAG 流程")
-
-    # ── 2. 混合检索 + Rerank ─────────────────────────────────────
-    retrieved_docs = hybrid_search(search_query, knowledge_id)
-
-    if not retrieved_docs:
+    # ── 2. RAG 检索 + 构造消息 ──────────────────────────────────
+    messages, sources = _prepare_rag(query, history, knowledge_id)
+    if messages is None:
         return "抱歉，在知识库中没有检索到与您问题相关的内容。", []
 
-    # ── 3. 组装 Prompt 和溯源列表 ────────────────────────────────
-    user_prompt, sources = build_prompt(query, retrieved_docs)
-
-    # ── 4. 构造发给 LLM 的完整消息列表 ──────────────────────────
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-    # history[:-1] 去掉最后一条（当前用户提问），[-6:] 取最近6条
-    recent_history = history[:-1][-6:]
-
-    for msg in recent_history:
-        messages.append({
-            "role": msg.role.value,
-            "content": msg.content,
-        })
-
-    # 最后加入当前轮的用户提问（用带 context 的 user_prompt）
-    messages.append({"role": "user", "content": user_prompt})
-
-    # ── 5. 调用千问大模型 ────────────────────────────────────────
-    logger.info(f"调用大模型，消息共 {len(messages)} 条（含历史 {len(recent_history)} 条）")
+    # ── 3. 调用大模型 ────────────────────────────────────────────
+    logger.info(f"调用大模型，消息共 {len(messages)} 条")
     try:
         response = client.chat.completions.create(
             model=settings.rag.llm_model,
@@ -262,7 +359,6 @@ def chat_with_knowledge_base(
         answer = response.choices[0].message.content
         logger.info("大模型回答生成完毕")
         return answer, sources
-
     except Exception as e:
         logger.error(f"调用大模型报错:\n{traceback.format_exc()}")
         return "生成回答时发生系统错误，请稍后重试。", sources
@@ -273,90 +369,31 @@ def stream_chat_with_knowledge_base(
         query: str,
         history: List[ChatMessage],
 ) -> Generator[str, None, None]:
+    """核心 QA 流程（流式）：Try Tool → RAG 检索 → 流式调用 LLM"""
+    logger.info(f"[流式] 接收到提问: {query}")
+
+    # ── 初始化 LLM 客户端 ────────────────────────────────────────
     try:
         client = _get_llm_client()
     except ValueError as e:
         yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
         return
 
-    # 1. Query Rewrite
-    logger.info(f"[流式] 接收到提问: {query}")
-    search_query = rewrite_query(query, history)
+    # ── 1. 工具路由 ─────────────────────────────────────────────
+    handled, answer = _try_tool_route(query, history)
+    if handled:
+        yield f"data: {json.dumps({'chunk': answer}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
 
-    # 1.5 Agent/Tool 路由（阻塞执行，不流式）
-    from app.agent.registry import ToolRegistry, auto_route
-
-    registry = ToolRegistry()
-    registry.initialize()
-    tool_name = auto_route(query)
-
-    if tool_name:
-        logger.info(f"[流式] 触发工具调用: {tool_name}")
-        tool = registry.get(tool_name)
-        if tool:
-            tool_messages = [{"role": "system", "content": "你是一个数据库查询助手。根据用户的问题，生成合适的 SQL 查询语句。"}]
-            recent_history = history[:-1][-4:]
-            for msg in recent_history:
-                tool_messages.append({"role": msg.role.value, "content": msg.content})
-            tool_messages.append({"role": "user", "content": query})
-
-            content, tool_calls = _call_llm_with_tool(tool_messages, registry.get_openai_tools())
-
-            if tool_calls:
-                tc = tool_calls[0]
-                if tc.function.name == tool_name:
-                    import json as _json
-                    try:
-                        args = _json.loads(tc.function.arguments)
-                    except Exception:
-                        args = {}
-                    logger.info(f"[流式] 执行工具 {tool_name}，参数: {args}")
-                    result = tool.execute(args)
-
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [{
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }],
-                    })
-                    tool_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
-
-                    # 非流式生成工具结果的自然语言回答
-                    answer = _call_llm(tool_messages)
-                    if answer:
-                        logger.info("[流式] 工具调用完成，流式返回结果")
-                        yield f"data: {json.dumps({'chunk': answer}, ensure_ascii=False)}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-
-            logger.warning("[流式] 工具调用失败，降级到 RAG 流程")
-            yield f"data: {json.dumps({'chunk': '工具调用不可用，将使用知识库检索回答问题。'}, ensure_ascii=False)}\n\n"
-
-    # 2. 混合检索
-    retrieved_docs = hybrid_search(search_query, knowledge_id)
-    if not retrieved_docs:
+    # ── 2. RAG 检索 + 构造消息 ──────────────────────────────────
+    messages, sources = _prepare_rag(query, history, knowledge_id)
+    if messages is None:
         yield f"data: {json.dumps({'chunk': '抱歉，在知识库中没有检索到相关内容。'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
-    # 3. 组装 Prompt 和 溯源
-    user_prompt, sources = build_prompt(query, retrieved_docs)
-
-    # 4. 构造消息
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    recent_history = history[:-1][-6:]
-    for msg in recent_history:
-        messages.append({"role": msg.role.value, "content": msg.content})
-    messages.append({"role": "user", "content": user_prompt})
-
-    # 5. 流式调用大模型 (注意这里的 stream=True)
+    # ── 3. 流式调用大模型 ────────────────────────────────────────
     logger.info("[流式] 开始向 LLM 请求数据流...")
     try:
         response_stream = client.chat.completions.create(
@@ -365,24 +402,19 @@ def stream_chat_with_knowledge_base(
             temperature=settings.rag.llm_temperature,
             top_p=settings.rag.llm_top_p,
             max_tokens=settings.rag.llm_max_tokens,
-            stream=True
+            stream=True,
         )
 
-        # 核心循环：只要大模型吐出一个字，就立刻发给前端
         for chunk in response_stream:
             delta_content = chunk.choices[0].delta.content
             if delta_content:
-                # 包装成 SSE 格式：data: {"chunk": "你"} \n\n
                 yield f"data: {json.dumps({'chunk': delta_content}, ensure_ascii=False)}\n\n"
 
-        # 6. 当文字全部吐完后，把溯源信息发给前端
+        # 发送溯源信息
         sources_dict = [s.model_dump() for s in sources]
         yield f"data: {json.dumps({'sources': sources_dict}, ensure_ascii=False)}\n\n"
-
-        # 7. 发送结束标记
         yield "data: [DONE]\n\n"
         logger.info("[流式] 回答流发送完毕。")
-
     except Exception as e:
         logger.error(f"流式调用大模型报错:\n{traceback.format_exc()}")
         yield f"data: {json.dumps({'error': '生成回答时发生系统错误。'}, ensure_ascii=False)}\n\n"

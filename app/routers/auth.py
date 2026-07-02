@@ -1,16 +1,19 @@
 import time
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.db.session import get_session
 from app.db.models import User
 from app.api.schemas import LoginRequest, RegisterRequest, LoginResponse
 from app.core.auth import verify_password, hash_password, create_access_token
+from app.core.ratelimit import check_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 
 @router.post("/login", summary="用户登录")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     start_time = time.time()
+    check_rate_limit(request, max_requests=10, window_seconds=60)
+
     with get_session() as session:
         user = session.query(User).filter(User.username == req.username).first()
         if not user:
@@ -28,8 +31,10 @@ def login(req: LoginRequest):
 
 
 @router.post("/register", summary="用户注册")
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
     start_time = time.time()
+    check_rate_limit(request, max_requests=5, window_seconds=60)
+
     with get_session() as session:
         existing = session.query(User).filter(User.username == req.username).first()
         if existing:

@@ -74,6 +74,7 @@ class RAGConfig:
     llm_temperature: float
     llm_top_p: float
     llm_max_tokens: int
+    min_rerank_top_k: int = 3
     llm_api_key: str = field(default="")
 
 
@@ -139,10 +140,18 @@ def _build_settings() -> Settings:
 
     rerank_model_params = raw.get("models", {}).get("rerank", {})
 
+    # ES 密码支持从环境变量覆盖（优先级高于 config.yaml）
+    es_raw = dict(raw["elasticsearch"])
+    es_raw["password"] = os.getenv("ES_PASSWORD", es_raw["password"])
+
+    # 数据库密码支持从环境变量覆盖
+    db_raw = dict(raw["database"])
+    db_raw["password"] = os.getenv("DB_PASSWORD", db_raw["password"])
+
     result = Settings(
         app=AppConfig(**raw["app"]),
-        es=ESConfig(**raw["elasticsearch"]),
-        db=DatabaseConfig(**raw["database"]),
+        es=ESConfig(**es_raw),
+        db=DatabaseConfig(**db_raw),
         rag=RAGConfig(
             embedding_model=rag_raw["embedding_model"],
             use_rerank=rag_raw.get("use_rerank", False),
@@ -154,6 +163,7 @@ def _build_settings() -> Settings:
             rrf_k=rag_raw["rrf_k"],
             rerank_top_k=rag_raw["rerank_top_k"],
             confidence_threshold=rag_raw["confidence_threshold"],
+            min_rerank_top_k=rag_raw.get("min_rerank_top_k", 3),
             llm_base_url=rag_raw["llm_base_url"],
             llm_model=rag_raw["llm_model"],
             llm_temperature=rag_raw["llm_temperature"],

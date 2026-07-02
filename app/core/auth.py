@@ -19,9 +19,13 @@ from passlib.context import CryptContext
 from app.db.session import get_session
 from app.db.models import User
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "rag-enterprise-secret-key-change-in-production")
-if os.getenv("JWT_SECRET_KEY") is None:
-    logging.warning("JWT_SECRET_KEY 未设置，使用默认密钥（不安全），请在生产环境中设置环境变量 JWT_SECRET_KEY")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    raise RuntimeError(
+        "JWT_SECRET_KEY 未设置！请在 .env 文件中配置 JWT_SECRET_KEY。\n"
+        "示例：openssl rand -hex 32"
+    )
+SECRET_KEY = JWT_SECRET_KEY
 ALGORITHM = "HS256"
 _jwt_expire_str = os.getenv("JWT_EXPIRE_MINUTES", "60")
 try:

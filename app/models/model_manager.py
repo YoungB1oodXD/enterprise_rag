@@ -110,11 +110,13 @@ def _get_embedding_local(texts: List[str], model_path: str) -> np.ndarray:
 
 def get_rerank_scores(text_pairs: List[List[str]]) -> np.ndarray:
     """
-    调用 DashScope gte-rerank API 进行精排。
+    调用 DashScope gte-rerank-v2 API 进行精排。
 
-    请求格式：
-        POST https://dashscope.aliyuncs.com/api/v1/services/ranker/gte-rerank/hybrid
-        {"model": "gte-rerank", "query": "…", "documents": ["…", …], "top_n": N}
+    新版 API（2025）：
+        POST https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+        {"model": "gte-rerank-v2", "input": {"query": "…", "documents": ["…"]}, "parameters": {"top_n": N}}
+
+    旧版 /api/v1/services/ranker/gte-rerank/hybrid 已废弃（返回 403）。
 
     失败时返回空数组，由调用方降级到 RRF 排序，不影响主流程。
     """
@@ -131,16 +133,21 @@ def get_rerank_scores(text_pairs: List[List[str]]) -> np.ndarray:
 
     import httpx
 
-    url = "https://dashscope.aliyuncs.com/api/v1/services/ranker/gte-rerank/hybrid"
+    url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": settings.rag.rerank_model or "gte-rerank",
-        "query": query,
-        "documents": documents,
-        "top_n": len(documents),
+        "model": settings.rag.rerank_model or "gte-rerank-v2",
+        "input": {
+            "query": query,
+            "documents": documents,
+        },
+        "parameters": {
+            "return_documents": False,
+            "top_n": len(documents),
+        },
     }
 
     try:

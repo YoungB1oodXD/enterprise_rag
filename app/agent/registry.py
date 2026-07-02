@@ -56,23 +56,33 @@ class ToolRegistry:
         return result
 
 
-# ── 关键词路由 ────────────────────────────────────────────────────
-# 触发 SQL 工具的关键词
-_SQL_TRIGGERS = [
-    "统计", "多少个", "数量", "几条", "多少条", "总数",
-    "列出", "列表", "有哪些", "分别",
-    " count ", " count(", "select ", "查询",
+# ── 关键词路由（第一道闸）─────────────────────────────────────────
+#
+# 设计原则：
+# 只有明确涉及数据库表记录的问题才走 SQL 工具。
+# 知识库内容问题（法规、政策等）必须走 RAG 检索，不能被 SQL 劫持。
+#
+# 第一道闸：快速关键词匹配
+# 仅保留明确的 SQL 语法关键词，中文自然语言触发词容易误伤。
+_SQL_DIRECT_TRIGGERS = [
+    " count(", " select ", "select ",  # SQL 语法
+    # 注意：中文关键词如 "统计"/"列出"/"有哪些"/"查询" 等已在测试中发现
+    # 大量误判（如 "有哪些情形海关不予备案" → 被 SQL 拦截），
+    # 已移除。这类问题由 RAG 流程处理。
 ]
 
 
 def auto_route(query: str) -> Optional[str]:
     """
-    判断是否需要调用工具。返回匹配的工具名，或 None。
+    第一道路由：快速关键词匹配。
+    仅在查询包含明确的 SQL 语法关键词时触发。
+    返回匹配的工具名，或 None。
+
+    返回 None 后，第二道 LLM 语义路由（_try_tool_route 内）会处理剩余情况。
     """
     q = query.lower().strip()
 
-    # SQL 工具触发
-    for keyword in _SQL_TRIGGERS:
+    for keyword in _SQL_DIRECT_TRIGGERS:
         if keyword.lower() in q:
             logger.info(f"关键词 '{keyword}' 触发 SQL 工具路由")
             return "sql_query"

@@ -115,12 +115,38 @@ def hybrid_search(query: str, knowledge_id: int) -> List[Dict[str, Any]]:
 
     reranked_docs = sorted(fused_docs, key=lambda x: x["rerank_score"], reverse=True)
 
-    # 取 Top K 并过滤掉分数低于阈值的辣鸡文档
-    final_results = []
+    # P0: 取 Top K 并过滤掉分数低于阈值的辣鸡文档
+    passed = []
     for doc in reranked_docs[:settings.rag.rerank_top_k]:
-        # threshold 可以在 config.yaml 里配，比如 0.0，低于此分数说明完全不相关
         if doc["rerank_score"] > settings.rag.confidence_threshold:
-            final_results.append(doc)
+            passed.append(doc)
 
-    logger.info(f"Rerank 完成，最终保留 {len(final_results)} 个高质量文档块")
-    return final_results
+    # P0: 保底 — 即使低于阈值也至少保留 min_rerank_top_k 个，
+    # 避免场景题等低分但相关问题被全部过滤导致 LLM 无法回答
+    min_top_k = settings.rag.min_rerank_top_k
+    if len(passed) < min_top_k and reranked_docs:
+        existing_ids = {d["_id"] for d in passed}
+        for doc in reranked_docs:
+            if doc["_id"] not in existing_ids:
+                passed.append(doc)
+                existing_ids.add(doc["_id"])
+                if len(passed) >= min_top_k:
+                    break
+        logger.info(
+            f"保底策略：低于阈值({settings.rag.confidence_threshold})，"
+            f"从 {len(reranked_docs)} 个候选中补全到 {len(passed)} 个 chunk"
+        )
+
+    # P1: 零来源降级 — 若 rerank 后仍无结果（阈值过高或 reranker 异常），
+    # 直接拿 RRF 融合的前 N 个结果兜底
+    if not passed and fused_docs:
+        logger.warning(
+            f"Reranker 全量过滤，降级使用 RRF 前 {settings.rag.rerank_top_k} 个结果"
+        )
+        passed = fused_docs[:settings.rag.rerank_top_k]
+        for doc in passed:
+            doc["rerank_score"] = doc.get("rerank_score", 0.0)
+            doc["fallback_from_rerank"] = True
+
+    logger.info(f"Rerank 完成，最终保留 {len(passed)} 个高质量文档块")
+    return passed

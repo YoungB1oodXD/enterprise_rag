@@ -1,0 +1,113 @@
+name: RAG Evaluation
+
+on:
+  pull_request:
+    paths:
+      - 'app/services/**'
+      - 'app/retrieval/**'
+      - 'app/models/**'
+      - 'app/evaluation/**'
+      - 'app/core/config.py'
+      - 'config.yaml'
+  schedule:
+    - cron: '23 2 * * *'  # 每天凌晨 2:23 全量评估（避开整点）
+
+jobs:
+  # ── PR 阻塞级：轻量回归检测（10 条 + 确定性指标） ──
+  quick-eval:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      elasticsearch:
+        image: elasticsearch:8.5.3
+        env:
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+          xpack.security.enabled: false
+          discovery.type: single-node
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -s http://localhost:9200/_cluster/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-eval.txt
+
+      - name: Seed CI evaluation data
+        env:
+          ES_HOST: localhost
+          ES_PORT: 9200
+        run: python scripts/seed_eval_ci.py
+
+      - name: Run regression tests
+        env:
+          ES_HOST: localhost
+          ES_PORT: 9200
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: pytest tests/test_rag_regression.py -v --tb=short -x
+
+  # ── 每日全量评估 ──
+  nightly-eval:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    services:
+      elasticsearch:
+        image: elasticsearch:8.5.3
+        env:
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+          xpack.security.enabled: false
+          discovery.type: single-node
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -s http://localhost:9200/_cluster/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-eval.txt
+
+      - name: Seed CI evaluation data
+        env:
+          ES_HOST: localhost
+          ES_PORT: 9200
+        run: python scripts/seed_eval_ci.py
+
+      - name: Run full evaluation
+        env:
+          ES_HOST: localhost
+          ES_PORT: 9200
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: |
+          python scripts/run_full_eval.py \
+            --dataset dataset/eval_dataset_ip_customs_balanced_30.json \
+            --knowledge-id 1 \
+            --output eval_results/${{ github.sha }}.json \
+            --compare eval_results/baseline.json
+
+      - name: Archive evaluation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ github.sha }}
+          path: eval_results/

@@ -1,5 +1,6 @@
 # main.py
 import uuid
+from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,12 +11,45 @@ from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-app = FastAPI(title="RAG Enterprise - 企业级智能知识库问答系统", version="2.0.0")
 
-# 启动时检查 JWT 密钥配置
-from app.core.auth import SECRET_KEY as _jwt_secret
-if _jwt_secret == "rag-enterprise-secret-key-change-in-production":
-    logger.warning("JWT 使用默认密钥，请设置 JWT_SECRET_KEY 环境变量")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期：启动时连接 ES、恢复卡住文档，关闭时清理"""
+    # ── Startup ──
+    logger.info("正在初始化 Elasticsearch...")
+    from app.core.es_client import init_es
+    if not init_es():
+        logger.critical("Elasticsearch 连接失败，服务无法启动")
+        raise RuntimeError("Elasticsearch 连接失败，请检查 ES 是否已启动")
+
+    # 扫描重启前卡在 processing 状态的文档，重置为 pending
+    from app.db.session import get_session
+    from app.db.models import Document
+    try:
+        with get_session() as session:
+            stuck = session.query(Document).filter(
+                Document.process_status == "processing"
+            ).all()
+            if stuck:
+                logger.warning(
+                    f"发现 {len(stuck)} 个文档在重启时为 processing 状态，已重置为 pending"
+                )
+                for doc in stuck:
+                    doc.process_status = "pending"
+    except Exception as e:
+        logger.error(f"扫描卡住文档失败: {e}")
+
+    logger.info("RAG Enterprise 启动完成")
+    yield
+    # ── Shutdown ──
+    logger.info("RAG Enterprise 服务关闭")
+
+
+app = FastAPI(title="RAG Enterprise - 企业级智能知识库问答系统", version="2.0.0", lifespan=lifespan)
+
+# JWT 密钥在 auth.py 导入时自动检查（无默认值，未配置则抛出异常）
+from app.core.auth import SECRET_KEY as _jwt_secret  # noqa: F401
+logger.info("JWT_SECRET_KEY 已配置")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,11 +63,13 @@ from app.routers.knowledge_base import router as knowledge_base_router
 from app.routers.document import router as document_router
 from app.routers.conversation import router as conversation_router
 from app.routers.chat import router as chat_router
+from app.routers.evaluation import router as evaluation_router
 app.include_router(auth_router)
 app.include_router(knowledge_base_router)
 app.include_router(document_router)
 app.include_router(conversation_router)
 app.include_router(chat_router)
+app.include_router(evaluation_router)
 
 
 # ==========================================
@@ -81,6 +117,4 @@ def health_check():
 
 if __name__ == "__main__":
     logger.info("启动 RAG Enterprise 问答系统...")
-    from app.core.es_client import init_es
-    init_es()
     uvicorn.run(app, host=settings.app.host, port=settings.app.port)
